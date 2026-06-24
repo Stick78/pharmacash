@@ -1870,8 +1870,18 @@ function Depenses({ data, setRaw, user }) {
         </div>
       )}
       <Table
-        cols={["Date","Catégorie","Libellé","Mode","Montant"]}
-        rows={depenses.map(d=>[fmtDate(d.date),d.categorie,d.libelle,modeLabel(d.mode),<b style={{color:"#dc2626"}}>{fmt(d.montant)}</b>])}
+        cols={["Date","Catégorie","Libellé","Mode","Montant",""]}
+        rows={depenses.map(d=>[
+          fmtDate(d.date),
+          <Badge color="#ea580c">{d.categorie}</Badge>,
+          d.libelle,
+          modeLabel(d.mode),
+          <b style={{color:"#dc2626"}}>{fmt(d.montant)}</b>,
+          <EditDeleteBtns isAdmin={isAdmin}
+            onEdit={()=>{ setForm({date:d.date,categorie:d.categorie,libelle:d.libelle,montant:String(d.montant),mode:d.mode,note:d.note||""}); setEditRow(d); setModal(true); }}
+            onDelete={()=>deleteDep(d.id)}
+          />,
+        ])}
         empty="Aucune dépense"
       />
       {modal && (
