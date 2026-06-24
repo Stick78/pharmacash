@@ -93,21 +93,21 @@ async function checkAndSendAlerts(data, soldes) {
   if (soldes.soldeEspeces < ALERT_SEUIL_CAISSE && !wasAlertSent(alertKeyC)) {
     const ok = await sendAlertEmail(
       "⚠️ PharmaCash — Solde caisse bas",
-      \`<h2 style="color:#dc2626">⚠️ Alerte Solde Caisse</h2>
+      `<h2 style="color:#dc2626">⚠️ Alerte Solde Caisse</h2>
       <p>Le solde de la caisse espèces est descendu sous le seuil minimum.</p>
       <table style="border-collapse:collapse;width:100%">
         <tr><td style="padding:8px;background:#fef2f2"><b>Solde actuel</b></td><td style="padding:8px;color:#dc2626;font-size:20px"><b>\${new Intl.NumberFormat('fr-FR').format(Math.round(soldes.soldeEspeces))} FCFA</b></td></tr>
         <tr><td style="padding:8px;background:#fef2f2"><b>Seuil minimum</b></td><td style="padding:8px">\${new Intl.NumberFormat('fr-FR').format(ALERT_SEUIL_CAISSE)} FCFA</td></tr>
         <tr><td style="padding:8px;background:#fef2f2"><b>Date</b></td><td style="padding:8px">\${new Date().toLocaleDateString('fr-FR')}</td></tr>
       </table>
-      <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>\`
+      <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>`
     );
     if (ok) markAlertSent(alertKeyC);
   }
 
   // ── Alertes dépôts sans versement ────────────────────────────────────────
   for (const depot of (data.depots || [])) {
-    const alertKeyD = \`depot_\${depot.id}_\${t}\`;
+    const alertKeyD = `depot_\${depot.id}_\${t}`;
     if (wasAlertSent(alertKeyD)) continue;
 
     // Dernier versement de ce dépôt
@@ -121,8 +121,8 @@ async function checkAndSendAlerts(data, soldes) {
 
     if (joursDepuis >= ALERT_DEPOT_JOURS) {
       const ok = await sendAlertEmail(
-        \`⚠️ PharmaCash — \${depot.nom} : aucun versement depuis \${joursDepuis} jours\`,
-        \`<h2 style="color:#ea580c">⚠️ Alerte Versement Dépôt</h2>
+        `⚠️ PharmaCash — \${depot.nom} : aucun versement depuis \${joursDepuis} jours`,
+        `<h2 style="color:#ea580c">⚠️ Alerte Versement Dépôt</h2>
         <p>Le dépôt suivant n'a pas effectué de versement depuis <b>\${joursDepuis} jour(s)</b>.</p>
         <table style="border-collapse:collapse;width:100%">
           <tr><td style="padding:8px;background:#fff7ed"><b>Dépôt</b></td><td style="padding:8px"><b>\${depot.nom}</b> (\${depot.localite})</td></tr>
@@ -130,7 +130,7 @@ async function checkAndSendAlerts(data, soldes) {
           <tr><td style="padding:8px;background:#fff7ed"><b>Jours écoulés</b></td><td style="padding:8px;color:#dc2626"><b>\${joursDepuis} jour(s)</b></td></tr>
           <tr><td style="padding:8px;background:#fff7ed"><b>Date vérification</b></td><td style="padding:8px">\${new Date().toLocaleDateString('fr-FR')}</td></tr>
         </table>
-        <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>\`
+        <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>`
       );
       if (ok) markAlertSent(alertKeyD);
     }
@@ -2180,7 +2180,7 @@ function generatePDF(data, type = "jour") {
   ${[{label:"🏥 Pharmacie centrale", id:"pharmacie"}, ...data.depots.map(d=>({label:"📍 "+d.nom, id:d.id}))].map(src=>{
     const esp = recettes.filter(r=>r.source===src.id&&r.mode==="especes").reduce((s,r)=>s+Number(r.montant||0),0);
     const mob = recettes.filter(r=>r.source===src.id&&MOBILE_MONEY_IDS.includes(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
-    return \`<tr><td>\${src.label}</td><td>\${fmtN(esp)}</td><td>\${fmtN(mob)}</td><td><b>\${fmtN(esp+mob)}</b></td></tr>\`;
+    return `<tr><td>\${src.label}</td><td>\${fmtN(esp)}</td><td>\${fmtN(mob)}</td><td><b>\${fmtN(esp+mob)}</b></td></tr>`;
   }).join("")}
   <tr class="total"><td>TOTAL</td><td>${fmtN(recettes.filter(r=>r.mode==="especes").reduce((s,r)=>s+Number(r.montant||0),0))}</td><td>${fmtN(recettes.filter(r=>MOBILE_MONEY_IDS.includes(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0))}</td><td>${fmtN(totRec)}</td></tr>
   </tbody></table>
