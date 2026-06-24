@@ -1464,6 +1464,8 @@ function Depots({ data, setRaw, user }) {
   const [transfertModal, setTransfertModal] = useState(false);
   const [inventaireModal, setInventaireModal] = useState(false);
   const [selectedDepot, setSelectedDepot] = useState(null);
+  const [editDot, setEditDot] = useState(null); // dotation en cours d'édition
+  const [editTr, setEditTr]   = useState(null); // transfert en cours d'édition
   const [vForm, setVForm] = useState({ depotId:"", montant:"", date:today(), caissiere:"", note:"" });
   const [dForm, setDForm] = useState({ nom:"", localite:"" });
   const [dotForm, setDotForm] = useState({ depotId:"", type:"livraison", date:today(), montant:"", note:"" });
@@ -1648,7 +1650,10 @@ function Depots({ data, setRaw, user }) {
             fmtDate(d.date), dep?.nom||"—",
             d.type==="initiale"?<Badge color="#0369a1">📦 Dotation initiale</Badge>:<Badge color="#047857">➕ Livraison</Badge>,
             <b style={{color:"#047857"}}>{fmt(d.montant)}</b>, d.note||"—",
-            <EditDeleteBtns isAdmin={isAdmin} onDelete={async()=>{ if(confirm("Supprimer ?")) await dbDelete("dotations_depots",d.id,setRaw,data,"dotationsDepots"); }}/>,
+            <EditDeleteBtns isAdmin={isAdmin}
+              onEdit={()=>{ setDotForm({depotId:d.depotId,type:d.type,date:d.date,montant:String(d.montant),note:d.note||""}); setEditDot(d); setDotModal(true); }}
+              onDelete={async()=>{ if(confirm("Supprimer cette dotation/livraison ?")) await dbDelete("dotations_depots",d.id,setRaw,data,"dotationsDepots"); }}
+            />,
           ];
         })}
         empty="Aucune livraison enregistrée"
@@ -1665,7 +1670,10 @@ function Depots({ data, setRaw, user }) {
             fmtDate(t.date), dep?.nom||"—",
             <Badge color="#ea580c">{motifLabel[t.motif]||t.motif}</Badge>,
             <b style={{color:"#dc2626"}}>{fmt(t.montant)}</b>, t.note||"—",
-            <EditDeleteBtns isAdmin={isAdmin} onDelete={async()=>{ if(confirm("Supprimer ?")) await dbDelete("transferts_depots",t.id,setRaw,data,"transfertsDepots"); }}/>,
+            <EditDeleteBtns isAdmin={isAdmin}
+              onEdit={()=>{ setTrForm({depotId:t.depotId,date:t.date,montant:String(t.montant),motif:t.motif,note:t.note||""}); setEditTr(t); setTransfertModal(true); }}
+              onDelete={async()=>{ if(confirm("Supprimer ce retour/transfert ?")) await dbDelete("transferts_depots",t.id,setRaw,data,"transfertsDepots"); }}
+            />,
           ];
         })}
         empty="Aucun retour enregistré"
@@ -1716,7 +1724,7 @@ function Depots({ data, setRaw, user }) {
       )}
 
       {dotModal && (
-        <Modal title="📦 Dotation initiale / Livraison" onClose={()=>setDotModal(false)}>
+        <Modal title={editDot?"✏️ Modifier la dotation/livraison":"📦 Dotation initiale / Livraison"} onClose={()=>{setDotModal(false);setEditDot(null);setDotForm({depotId:"",type:"livraison",date:today(),montant:"",note:""});}}>
           <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#166534" }}>
             La dotation initiale est le montant de départ du dépôt. Les livraisons augmentent l'encours sans impacter la caisse principale.
           </div>
@@ -1739,13 +1747,13 @@ function Depots({ data, setRaw, user }) {
           <Field label="Note"><Input value={dotForm.note} onChange={e=>setDotForm({...dotForm,note:e.target.value})} placeholder="Description des produits livrés..."/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setDotModal(false)}>Annuler</Btn>
-            <Btn variant="success" onClick={addDotation} disabled={!dotForm.depotId||!dotForm.montant}>Enregistrer</Btn>
+            <Btn variant="success" onClick={saveDot} disabled={!dotForm.depotId||!dotForm.montant}>{editDot?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
 
       {transfertModal && (
-        <Modal title="↩️ Retour / Transfert vers centrale" onClose={()=>setTransfertModal(false)}>
+        <Modal title={editTr?"✏️ Modifier le retour/transfert":"↩️ Retour / Transfert vers centrale"} onClose={()=>{setTransfertModal(false);setEditTr(null);setTrForm({depotId:"",date:today(),montant:"",motif:"peremption",note:""});}}>
           <Field label="Dépôt" required>
             <Select value={trForm.depotId} onChange={e=>setTrForm({...trForm,depotId:e.target.value})}>
               <option value="">— Sélectionner —</option>
@@ -1764,7 +1772,7 @@ function Depots({ data, setRaw, user }) {
           <Field label="Note"><Input value={trForm.note} onChange={e=>setTrForm({...trForm,note:e.target.value})} placeholder="Détails du retour..."/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setTransfertModal(false)}>Annuler</Btn>
-            <Btn variant="danger" onClick={addTransfert} disabled={!trForm.depotId||!trForm.montant}>Enregistrer</Btn>
+            <Btn variant="danger" onClick={saveTr} disabled={!trForm.depotId||!trForm.montant}>{editTr?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
