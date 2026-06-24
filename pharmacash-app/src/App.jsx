@@ -508,7 +508,17 @@ function Dashboard({ data }) {
 
   return (
     <div>
-      <h2 style={{ margin:"0 0 6px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Tableau de bord</h2>
+      {/* En-tête avec boutons PDF toujours visibles */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:16 }}>
+        <div>
+          <h2 style={{ margin:"0 0 4px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Tableau de bord</h2>
+          <p style={{ margin:0, fontSize:13, color:"#6b7280" }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <Btn variant="ghost" style={{ fontSize:13 }} onClick={()=>generatePDF(data,"jour")}>📄 PDF Journalier</Btn>
+          <Btn variant="ghost" style={{ fontSize:13 }} onClick={()=>generatePDF(data,"mois")}>📄 PDF Mensuel</Btn>
+        </div>
+      </div>
 
       {/* ── ALERTES VISUELLES ── */}
       {(() => {
