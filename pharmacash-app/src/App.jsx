@@ -314,11 +314,11 @@ const Icon = ({ name, size=18 }) => (
 
 // ─── UI ATOMS ────────────────────────────────────────────────────────────────
 const Badge = ({ children, color="#6b7280" }) => (
-  <span style={{ background:color+"20", color, border:`1px solid ${color}40`, borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:600 }}>{children}</span>
+  <span style={{ background:color+"18", color, border:`1px solid ${color}35`, borderRadius:20, padding:"3px 11px", fontSize:12, fontWeight:700, letterSpacing:0.2, display:"inline-flex", alignItems:"center", gap:3 }}>{children}</span>
 );
 
 const KpiCard = ({ label, value, sub, color="#0369a1", icon, highlight }) => (
-  <div style={{ background:highlight||"#fff", borderRadius:12, padding:"18px 20px", boxShadow:"0 1px 6px #0001", borderLeft:`4px solid ${color}`, display:"flex", flexDirection:"column", gap:6 }}>
+  <div className="kpi-card" style={{ background:highlight||"#fff", borderRadius:12, padding:"18px 20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", borderLeft:`5px solid ${color}`, display:"flex", flexDirection:"column", gap:6, cursor:"default" }}>
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
       <span style={{ fontSize:11, color: highlight?"#fff":"#6b7280", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>{label}</span>
       <span style={{ color, opacity:0.8 }}><Icon name={icon||"dashboard"} size={20}/></span>
@@ -331,7 +331,7 @@ const KpiCard = ({ label, value, sub, color="#0369a1", icon, highlight }) => (
 const Modal = ({ title, onClose, children, wide }) => (
   <div style={{ position:"fixed", inset:0, background:"#0007", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
     <div style={{ background:"#fff", borderRadius:16, width:"100%", maxWidth:wide?680:520, maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 80px #0004" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px 16px", borderBottom:"1px solid #f0f0f0", position:"sticky", top:0, background:"#fff", zIndex:1 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px 16px", borderBottom:"2px solid #d1fae5", position:"sticky", top:0, background:"#fff", zIndex:1 }}>
         <h3 style={{ margin:0, fontSize:17, fontWeight:700 }}>{title}</h3>
         <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"#6b7280" }}><Icon name="close"/></button>
       </div>
@@ -349,13 +349,13 @@ const Field = ({ label, children, required, half }) => (
 
 const Row = ({ children }) => <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>{children}</div>;
 
-const inp = { width:"100%", border:"1.5px solid #e5e7eb", borderRadius:8, padding:"9px 12px", fontSize:14, outline:"none", boxSizing:"border-box" };
+const inp = { width:"100%", border:"1.5px solid #d1fae5", borderRadius:8, padding:"9px 12px", fontSize:14, outline:"none", boxSizing:"border-box", transition:"border-color 0.2s" };
 const Input = (props) => <input {...props} style={{ ...inp, ...props.style }}/>;
 const Select = ({ children, ...props }) => <select {...props} style={{ ...inp, background:"#fff", ...props.style }}>{children}</select>;
 const Textarea = (props) => <textarea {...props} rows={2} style={{ ...inp, resize:"vertical", ...props.style }}/>;
 
 const Btn = ({ children, onClick, variant="primary", disabled, style={} }) => {
-  const v = { primary:{background:"#0369a1",color:"#fff"}, success:{background:"#047857",color:"#fff"}, danger:{background:"#dc2626",color:"#fff"}, ghost:{background:"#f3f4f6",color:"#374151"}, warn:{background:"#f59e0b",color:"#fff"} };
+  const v = { primary:{background:"linear-gradient(135deg,#047857,#065f46)",color:"#fff",boxShadow:"0 2px 6px rgba(4,120,87,0.3)"}, success:{background:"linear-gradient(135deg,#059669,#047857)",color:"#fff",boxShadow:"0 2px 6px rgba(5,150,105,0.3)"}, danger:{background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",boxShadow:"0 2px 6px rgba(220,38,38,0.3)"}, ghost:{background:"#f0fdf4",color:"#065f46",border:"1px solid #bbf7d0"}, warn:{background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",boxShadow:"0 2px 6px rgba(245,158,11,0.3)"} };
   return <button onClick={onClick} disabled={disabled} style={{ ...v[variant], border:"none", borderRadius:8, padding:"9px 18px", fontSize:14, fontWeight:600, cursor:disabled?"not-allowed":"pointer", opacity:disabled?0.6:1, ...style }}>{children}</button>;
 };
 
@@ -392,10 +392,10 @@ const EditDeleteBtns = ({ onEdit, onDelete, isAdmin }) => {
 };
 
 const Divider = ({ label }) => (
-  <div style={{ display:"flex", alignItems:"center", gap:10, margin:"20px 0 14px" }}>
-    <div style={{ flex:1, height:1, background:"#e5e7eb" }}/>
-    <span style={{ fontSize:12, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", whiteSpace:"nowrap" }}>{label}</span>
-    <div style={{ flex:1, height:1, background:"#e5e7eb" }}/>
+  <div style={{ display:"flex", alignItems:"center", gap:10, margin:"24px 0 16px" }}>
+    <div style={{ flex:1, height:2, background:"linear-gradient(90deg,#d1fae5,transparent)" }}/>
+    <span style={{ fontSize:11, fontWeight:800, color:"#047857", textTransform:"uppercase", letterSpacing:1.5, whiteSpace:"nowrap", padding:"4px 12px", background:"#f0fdf4", borderRadius:20, border:"1px solid #bbf7d0" }}>{label}</span>
+    <div style={{ flex:1, height:2, background:"linear-gradient(90deg,transparent,#d1fae5)" }}/>
   </div>
 );
 
@@ -510,11 +510,11 @@ function LoginPage({ onLogin, users, refetch }) {
     } catch { setErr("Erreur de connexion"); } finally { setLoading(false); }
   };
   return (
-    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#0c4a6e 0%,#0369a1 55%,#0ea5e9 100%)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#064e3b 0%,#047857 50%,#059669 100%)", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div style={{ background:"#fff", borderRadius:20, padding:40, width:"100%", maxWidth:400, boxShadow:"0 24px 80px #0004" }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
           <div style={{ fontSize:44 }}>💊</div>
-          <h1 style={{ margin:"8px 0 4px", fontSize:26, fontWeight:900, color:"#0c4a6e" }}>PharmaCash</h1>
+          <h1 style={{ margin:"8px 0 4px", fontSize:26, fontWeight:900, color:"#064e3b" }}>PharmaCash</h1>
           <p style={{ margin:0, color:"#6b7280", fontSize:14 }}>Gestion financière · Pharmacie de garde</p>
         </div>
         {err && <div style={{ background:"#fef2f2", border:"1px solid #fca5a5", color:"#dc2626", borderRadius:8, padding:"10px 14px", fontSize:13, marginBottom:14 }}>{err}</div>}
@@ -584,7 +584,7 @@ function Dashboard({ data }) {
       {/* En-tête avec boutons PDF toujours visibles */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:16 }}>
         <div>
-          <h2 style={{ margin:"0 0 4px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Tableau de bord</h2>
+          <h2 style={{ margin:"0 0 4px", fontSize:20, fontWeight:900, color:"#064e3b", letterSpacing:-0.5 }}>Tableau de bord</h2>
           <p style={{ margin:0, fontSize:13, color:"#6b7280" }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
         </div>
         <div style={{ display:"flex", gap:8 }}>
@@ -593,14 +593,10 @@ function Dashboard({ data }) {
         </div>
       </div>
 
-      {/* ── ALERTES VISUELLES ── */}
+      {/* ── ALERTES COMPACTES ── */}
       {(() => {
         const alertes = [];
-        // Solde caisse bas
-        if (soldes.soldeEspeces < ALERT_SEUIL_CAISSE) {
-          alertes.push({ type:"danger", msg:`⚠️ Solde caisse espèces bas : ${fmt(soldes.soldeEspeces)} — seuil minimum ${fmt(ALERT_SEUIL_CAISSE)}` });
-        }
-        // Dépôts sans versement depuis X jours
+        if (soldes.soldeEspeces < ALERT_SEUIL_CAISSE) alertes.push({ type:"danger", msg:`Solde caisse bas : ${fmt(soldes.soldeEspeces)}` });
         (data.depots||[]).forEach(dep => {
           const versements = (data.verseDepots||[]).filter(v=>v.depotId===dep.id);
           let jours = ALERT_DEPOT_JOURS + 1;
@@ -608,26 +604,23 @@ function Dashboard({ data }) {
             const dernier = versements.map(v=>v.date).sort().reverse()[0];
             jours = Math.floor((new Date(today()) - new Date(dernier)) / (1000*60*60*24));
           }
-          if (jours >= ALERT_DEPOT_JOURS) {
-            alertes.push({ type:"warn", msg:`📍 ${dep.nom} : aucun versement depuis ${jours} jour(s)` });
-          }
-          // Encours élevé
+          if (jours >= ALERT_DEPOT_JOURS) alertes.push({ type:"warn", msg:`${dep.nom} : pas de versement (${jours}j)` });
           const enc = calcEncoursDepot(dep.id, data);
-          if (enc.theorique > ALERT_ENCOURS_MAX) {
-            alertes.push({ type:"danger", msg:`📦 ${dep.nom} : encours élevé ${new Intl.NumberFormat('fr-FR').format(enc.theorique)} FCFA > seuil ${new Intl.NumberFormat('fr-FR').format(ALERT_ENCOURS_MAX)} FCFA` });
-          }
-          // Inventaire en retard
-          if (enc.joursDepuisInv >= ALERT_INV_JOURS) {
-            alertes.push({ type:"warn", msg:`🔍 ${dep.nom} : aucun inventaire depuis ${enc.joursDepuisInv===999?"jamais":enc.joursDepuisInv+" jours"}` });
-          }
+          if (enc.theorique > ALERT_ENCOURS_MAX) alertes.push({ type:"danger", msg:`${dep.nom} : encours élevé` });
+          if (enc.joursDepuisInv >= ALERT_INV_JOURS) alertes.push({ type:"warn", msg:`${dep.nom} : inventaire en retard` });
         });
         if (!alertes.length) return null;
         return (
-          <div style={{ marginBottom:16 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:16 }}>
             {alertes.map((a,i) => (
-              <div key={i} style={{ background:a.type==="danger"?"#fef2f2":"#fff7ed", border:`1px solid ${a.type==="danger"?"#fca5a5":"#fed7aa"}`, borderRadius:10, padding:"10px 16px", marginBottom:8, display:"flex", gap:10, alignItems:"center" }}>
-                <span style={{ color:a.type==="danger"?"#dc2626":"#ea580c", fontWeight:700, fontSize:13 }}>{a.msg}</span>
-              </div>
+              <span key={i} style={{
+                background:a.type==="danger"?"#fef2f2":"#fff7ed",
+                color:a.type==="danger"?"#dc2626":"#ea580c",
+                border:`1px solid ${a.type==="danger"?"#fca5a5":"#fed7aa"}`,
+                borderRadius:20, padding:"4px 12px", fontSize:12, fontWeight:600,
+              }}>
+                {a.type==="danger"?"⚠️":"📍"} {a.msg}
+              </span>
             ))}
           </div>
         );
@@ -639,7 +632,7 @@ function Dashboard({ data }) {
       {/* SOLDES TEMPS RÉEL */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:14, marginBottom:22 }}>
         {/* Caisse espèces */}
-        <div style={{ background:"linear-gradient(120deg,#0369a1,#0c4a6e)", borderRadius:14, padding:"20px 22px", color:"#fff", boxShadow:"0 4px 20px #0369a140" }}>
+        <div style={{ background:"linear-gradient(120deg,#047857,#064e3b)", borderRadius:14, padding:"20px 22px", color:"#fff", boxShadow:"0 4px 20px #0369a140" }}>
           <div style={{ fontSize:11, fontWeight:700, opacity:0.7, textTransform:"uppercase", letterSpacing:0.8, marginBottom:4 }}>💵 Caisse Espèces — Temps réel</div>
           <div style={{ fontSize:30, fontWeight:900 }}>{fmt(soldes.soldeEspeces)}</div>
           <div style={{ fontSize:11, opacity:0.65, marginTop:8, lineHeight:1.8 }}>
@@ -2786,10 +2779,10 @@ export default function App() {
   }, []);
 
   if (loading) return (
-    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#0c4a6e,#0369a1)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#064e3b,#047857,#059669)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
       <div style={{ fontSize:48 }}>💊</div>
       <div style={{ color:"#fff", fontSize:20, fontWeight:800 }}>PharmaCash</div>
-      <div style={{ color:"#7dd3fc", fontSize:14 }}>Connexion à la base de données...</div>
+      <div style={{ color:"#a7f3d0", fontSize:14 }}>Connexion à la base de données...</div>
       <div style={{ width:40, height:40, border:"4px solid #ffffff40", borderTop:"4px solid #fff", borderRadius:"50%", animation:"spin 1s linear infinite" }}/>
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
     </div>
@@ -2821,37 +2814,37 @@ export default function App() {
   };
 
   const Sidebar = () => (
-    <div style={{ width:224, background:"#0c4a6e", display:"flex", flexDirection:"column", height:"100%" }}>
-      <div style={{ padding:"22px 20px 14px", borderBottom:"1px solid #1e5f8a" }}>
+    <div style={{ width:224, background:"linear-gradient(180deg,#064e3b 0%,#065f46 50%,#047857 100%)", display:"flex", flexDirection:"column", height:"100%" }}>
+      <div style={{ padding:"22px 20px 14px", borderBottom:"1px solid #065f46" }}>
         <div style={{ fontSize:20, fontWeight:900, color:"#fff" }}>💊 PharmaCash</div>
-        <div style={{ fontSize:11, color:"#7dd3fc", marginTop:3 }}>Gestion financière · 24h/24</div>
+        <div style={{ fontSize:11, color:"#a7f3d0", marginTop:3 }}>Gestion financière · 24h/24</div>
         {syncing && <div style={{ marginTop:4, fontSize:11, color:"#fde68a", fontWeight:600 }}>⟳ Synchronisation...</div>}
         {!isOnline && <div style={{ marginTop:6, fontSize:11, background:"#dc2626", color:"#fff", borderRadius:6, padding:"3px 8px", display:"inline-block", fontWeight:700 }}>✗ Hors ligne — données locales</div>}
         {showInstall && <button onClick={handleInstall} style={{ marginTop:6, fontSize:11, background:"#38bdf8", color:"#0c4a6e", border:"none", borderRadius:6, padding:"4px 10px", fontWeight:700, cursor:"pointer", display:"block" }}>📲 Installer l'app</button>}
       </div>
 
       {/* Solde mini dans sidebar */}
-      <div style={{ margin:"10px 12px", background:"#1e5f8a", borderRadius:10, padding:"10px 14px" }}>
-        <div style={{ fontSize:10, color:"#7dd3fc", fontWeight:700, textTransform:"uppercase" }}>💵 Solde caisse</div>
+      <div style={{ margin:"10px 12px", background:"rgba(0,0,0,0.2)", borderRadius:10, padding:"10px 14px" }}>
+        <div style={{ fontSize:10, color:"#a7f3d0", fontWeight:700, textTransform:"uppercase" }}>💵 Solde caisse</div>
         <div style={{ fontSize:15, fontWeight:900, color:soldeCaisse>=0?"#4ade80":"#f87171", marginTop:2 }}>💵 {fmt(soldeCaisse)}</div>
-        <div style={{ fontSize:12, color:"#7dd3fc", marginTop:2 }}>📱 {fmt(solde.totalMobile)}</div>
+        <div style={{ fontSize:12, color:"#a7f3d0", marginTop:2 }}>📱 {fmt(solde.totalMobile)}</div>
       </div>
 
       <nav style={{ flex:1, overflowY:"auto", padding:"6px 0" }}>
         {nav.map(n=>(
           <button key={n.key} onClick={()=>{ setPage(n.key); setSideOpen(false); }} style={{
             display:"flex", alignItems:"center", gap:12, width:"100%", padding:"10px 20px",
-            background:page===n.key?"#1e5f8a":"none", border:"none", cursor:"pointer",
-            color:page===n.key?"#fff":"#bae6fd", fontSize:14, fontWeight:page===n.key?700:400,
-            borderLeft:page===n.key?"3px solid #38bdf8":"3px solid transparent", textAlign:"left",
+            background:page===n.key?"rgba(255,255,255,0.15)":"none", border:"none", cursor:"pointer",
+            color:page===n.key?"#fff":"#a7f3d0", transition:"all 0.2s", fontSize:14, fontWeight:page===n.key?700:400,
+            borderLeft:page===n.key?"3px solid #6ee7b7":"3px solid transparent", textAlign:"left",
           }}>
             <Icon name={n.icon} size={16}/> {n.label}
           </button>
         ))}
       </nav>
-      <div style={{ padding:"14px 20px", borderTop:"1px solid #1e5f8a" }}>
-        <div style={{ fontSize:13, color:"#7dd3fc", marginBottom:3 }}>{user.name}</div>
-        <div style={{ marginBottom:10 }}><Badge color="#38bdf8">{ROLES[user.role]?.label}</Badge></div>
+      <div style={{ padding:"14px 20px", borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ fontSize:13, color:"#a7f3d0", marginBottom:3 }}>{user.name}</div>
+        <div style={{ marginBottom:10 }}><Badge color="#6ee7b7">{ROLES[user.role]?.label}</Badge></div>
         <button onClick={()=>setUser(null)} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:13, fontWeight:600 }}>
           <Icon name="logout" size={14}/> Déconnexion
         </button>
@@ -2860,7 +2853,7 @@ export default function App() {
   );
 
   return (
-    <div style={{ display:"flex", height:"100vh", fontFamily:"'Inter','Segoe UI',sans-serif", background:"#f1f5f9" }}>
+    <div style={{ display:"flex", height:"100vh", fontFamily:"'Inter','Segoe UI',sans-serif", background:"#f0fdf4" }}>
       <style>{`
         @media(max-width:720px){ .ds{display:none!important} }
         @media(min-width:721px){ .mb{display:none!important} }
@@ -2885,7 +2878,7 @@ export default function App() {
 
       <div style={{ flex:1, display:"flex", flexDirection:"column", minWidth:0, overflow:"hidden" }}>
         {/* Mobile bar */}
-        <div className="mb" style={{ background:"#0c4a6e", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div className="mb" style={{ background:"linear-gradient(180deg,#064e3b 0%,#065f46 50%,#047857 100%)", padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <button onClick={()=>setSideOpen(true)} style={{ background:"none", border:"none", cursor:"pointer", color:"#fff" }}><Icon name="menu"/></button>
             <span style={{ color:"#fff", fontWeight:900, fontSize:17 }}>💊 PharmaCash</span>
@@ -2897,7 +2890,7 @@ export default function App() {
           </div>
         </div>
 
-        <main style={{ flex:1, overflowY:"auto", padding:"22px 18px" }}>
+        <main style={{ flex:1, overflowY:"auto", padding:"22px 18px", background:"#f0fdf4" }}>
           {renderPage()}
         </main>
       </div>
