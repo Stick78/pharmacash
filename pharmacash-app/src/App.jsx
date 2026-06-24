@@ -179,6 +179,7 @@ const EMPTY_DATA = {
   versementsBanque: [], verseDepots: [],
   depenses: [], dotationHistory: [],
   responsables: [],
+  caissieresApp: [], // { id, nom, telephone, poste:'centrale'|'depot', depotId? }
   connexions: [], // { id, user_id, user_name, role, date, heure, navigateur }
   clotures: [], // { id, date, tranche, caissiere, montantTheorique, montantPhysique, ecart, note }
   dotationsDepots: [],   // { id, depotId, type, date, montant, note }
@@ -199,6 +200,7 @@ const norm = {
   depenses: (r) => ({ id:r.id, date:r.date, categorie:r.categorie, libelle:r.libelle, montant:Number(r.montant), mode:r.mode, note:r.note||"" }),
   dotationHistory: (r) => ({ id:r.id, date:r.date, dest:r.dest, montant:Number(r.montant), note:r.note||"" }),
   responsables: (r) => ({ id:r.id, nom:r.nom, depotId:r.depot_id||null, telephone:r.telephone||"" }),
+  caissieresApp: (r) => ({ id:r.id, nom:r.nom, telephone:r.telephone||"", poste:r.poste||"centrale", depotId:r.depot_id||null }),
   connexions: (r) => ({ id:r.id, userId:r.user_id, userName:r.user_name, role:r.role, date:r.date, heure:r.heure, navigateur:r.navigateur||"" }),
   clotures: (r) => ({ id:r.id, date:r.date, tranche:r.tranche, caissiere:r.caissiere||'', montantTheorique:Number(r.montant_theorique||0), montantPhysique:Number(r.montant_physique||0), ecart:Number(r.ecart||0), note:r.note||'' }),
   dotationsDepots:   (r) => ({ id:r.id, depotId:r.depot_id, type:r.type, date:r.date, montant:Number(r.montant||0), note:r.note||'' }),
@@ -1010,10 +1012,17 @@ function Recettes({ data, setRaw, user }) {
     setForm({ date:today(), tranche:"jour", caissiere:"", source:"pharmacie", montantEsp:"", modeMobile:"orange_money", montantMobile:"", note:"" });
   };
 
-  const caissiers = [...new Set([
-    ...data.users.filter(u=>u.role==="caissier"||u.role==="admin").map(u=>u.name),
-    ...(data.responsables||[]).map(r=>r.nom),
-  ])];
+  // Filtrer les caissières selon la source sélectionnée
+  const getCaissiers = (source) => {
+    if (source === "pharmacie") {
+      // Caissières de la centrale uniquement
+      return (data.caissieresApp||[]).filter(c=>c.poste==="centrale").map(c=>c.nom);
+    } else {
+      // Responsables du dépôt sélectionné
+      return (data.responsables||[]).filter(r=>r.depotId===source).map(r=>r.nom);
+    }
+  };
+  const caissiers = getCaissiers(form.source);
   const filtered = [...data.recettes]
     .filter(r=>(!filterFrom||r.date>=filterFrom)&&(!filterTo||r.date<=filterTo))
     .sort((a,b)=>b.date.localeCompare(a.date));
@@ -2051,6 +2060,8 @@ function Utilisateurs({ data, setRaw, currentUser }) {
             : <span style={{fontSize:12,color:"#9ca3af"}}>Vous</span>,
         ])}
       />
+      <CaissieresSection data={data} setRaw={setRaw} isAdmin={currentUser?.role==="admin"}/>
+
       {modal && (
         <Modal title="Nouvel utilisateur" onClose={()=>setModal(false)}>
           <Field label="Nom complet" required><Input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field>
@@ -2077,6 +2088,58 @@ function Utilisateurs({ data, setRaw, currentUser }) {
 }
 
 
+
+// ─── CAISSIÈRES ──────────────────────────────────────────────────────────────
+function CaissieresSection({ data, setRaw, isAdmin }) {
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ nom:"", telephone:"" });
+
+  const add = async () => {
+    if (!form.nom) return;
+    const id = uid();
+    const localRow = { id, nom:form.nom, telephone:form.telephone||"", poste:"centrale", depotId:null };
+    const supaRow  = { id, nom:form.nom, telephone:form.telephone||null, poste:"centrale", depot_id:null };
+    await dbInsert("caissieres", supaRow, setRaw, data, "caissieresApp", localRow);
+    setModal(false); setForm({ nom:"", telephone:"" });
+  };
+
+  const del = async (id) => {
+    if (!confirm("Supprimer cette caissière ?")) return;
+    await dbDelete("caissieres", id, setRaw, data, "caissieresApp");
+  };
+
+  return (
+    <div style={{ marginTop:24 }}>
+      <Divider label="Caissières — Pharmacie centrale"/>
+      <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
+        {isAdmin && <Btn onClick={()=>setModal(true)} style={{ fontSize:13 }}>+ Nouvelle caissière</Btn>}
+      </div>
+      <Table
+        cols={["Nom","Téléphone",""]}
+        rows={(data.caissieresApp||[]).filter(c=>c.poste==="centrale").map(c=>[
+          <b>{c.nom}</b>,
+          c.telephone||"—",
+          isAdmin ? <Btn variant="danger" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>del(c.id)}>Supprimer</Btn> : null,
+        ])}
+        empty="Aucune caissière enregistrée"
+      />
+      {modal && (
+        <Modal title="Nouvelle caissière" onClose={()=>setModal(false)}>
+          <Field label="Nom complet" required>
+            <Input value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})} placeholder="Ex: Aminata Koné"/>
+          </Field>
+          <Field label="Téléphone">
+            <Input value={form.telephone} onChange={e=>setForm({...form,telephone:e.target.value})} placeholder="+225 ..."/>
+          </Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setModal(false)}>Annuler</Btn>
+            <Btn variant="success" onClick={add} disabled={!form.nom}>Enregistrer</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 // ─── CLÔTURE DE CAISSE ───────────────────────────────────────────────────────
 function ClotureCaisse({ data, setRaw, user }) {
@@ -2668,7 +2731,7 @@ function useSupabaseData() {
   const fetchAll = async () => {
     try {
       const [users, depots, recettes, clients, recouvrements, encaissementsDivers,
-             versementsBanque, verseDepots, depenses, dotationHistory, responsables, connexions, clotures,
+             versementsBanque, verseDepots, depenses, dotationHistory, responsables, caissieresRaw, connexions, clotures,
              dotationsDepots, transfertsDepots, inventairesDepots] = await Promise.all([
         supa.get("utilisateurs"),
         supa.get("depots"),
@@ -2681,6 +2744,7 @@ function useSupabaseData() {
         supa.get("depenses"),
         supa.get("dotation_history"),
         supa.get("responsables").catch(()=>[]),
+        supa.get("caissieres").catch(()=>[]),
         supa.get("connexions").catch(()=>[]),
         supa.get("clotures").catch(()=>[]),
         supa.get("dotations_depots").catch(()=>[]),
@@ -2699,6 +2763,7 @@ function useSupabaseData() {
         depenses:            depenses.map(norm.depenses),
         dotationHistory:     dotationHistory.map(norm.dotationHistory),
         responsables:        responsables.map(norm.responsables),
+        caissieresApp:       caissieresRaw.map(norm.caissieresApp),
         connexions:          connexions.map(norm.connexions),
         clotures:            clotures.map(norm.clotures),
         dotationsDepots:     dotationsDepots.map(norm.dotationsDepots),
