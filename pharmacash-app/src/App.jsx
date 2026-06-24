@@ -960,6 +960,7 @@ function Recettes({ data, setRaw, user }) {
   const [filterFrom, setFilterFrom] = useState(today());
   const [filterTo, setFilterTo] = useState(today());
   const [editRow, setEditRow] = useState(null);
+  const [editDotRow, setEditDotRow] = useState(null);
 
   const add = async () => {
     const hasEsp = Number(form.montantEsp) > 0;
@@ -985,6 +986,21 @@ function Recettes({ data, setRaw, user }) {
     const supaRow = { id, date:dotForm.date, dest:dotForm.dest, montant:Number(dotForm.montant), note:dotForm.note||null };
     await dbInsert("dotation_history", supaRow, setRaw, data, "dotationHistory", localRow);
     setDotModal(false); setDotForm({ date:today(), dest:"caisse_jour", montant:"", note:"" });
+  };
+
+  const saveDotEdit = async () => {
+    if (!dotForm.montant||!editDotRow) return;
+    const supaRow = { date:dotForm.date, dest:dotForm.dest, montant:Number(dotForm.montant), note:dotForm.note||null };
+    await dbUpdate("dotation_history", editDotRow.id, supaRow, setRaw, data, "dotationHistory",
+      d => d.id===editDotRow.id ? {...d, date:dotForm.date, dest:dotForm.dest, montant:Number(dotForm.montant), note:dotForm.note||""} : d
+    );
+    setDotModal(false); setEditDotRow(null);
+    setDotForm({ date:today(), dest:"caisse_jour", montant:"", note:"" });
+  };
+
+  const deleteDotRow = async (id) => {
+    if (!confirm("Supprimer cette dotation ?")) return;
+    await dbDelete("dotation_history", id, setRaw, data, "dotationHistory");
   };
 
   const deleteRec = async (id) => {
@@ -1055,6 +1071,30 @@ function Recettes({ data, setRaw, user }) {
             if(!tot) return null;
             return <span key={op.value} style={{ background:op.color+"15", color:op.color, border:`1px solid ${op.color}40`, borderRadius:20, padding:"4px 12px", fontSize:13, fontWeight:700 }}>{op.label} : {fmt(tot)}</span>;
           })}
+        </div>
+      )}
+
+      {/* ── HISTORIQUE DOTATIONS MONNAIE ── */}
+      {(data.dotationHistory||[]).length > 0 && (
+        <div style={{ marginBottom:20 }}>
+          <Divider label="Historique dotations monnaie"/>
+          <Table
+            cols={["Date","Destinataire","Montant","Note",""]}
+            rows={[...(data.dotationHistory||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(d=>{
+              const destNames = { caisse_jour:"☀️ Caisse Jour", caisse_nuit:"🌙 Caisse Nuit", ...Object.fromEntries((data.depots||[]).map(dep=>[dep.id,"📍 "+dep.nom])) };
+              return [
+                fmtDate(d.date),
+                destNames[d.dest]||d.dest,
+                <b style={{color:"#f59e0b"}}>{fmt(d.montant)}</b>,
+                d.note||"—",
+                <EditDeleteBtns isAdmin={isAdmin}
+                  onEdit={()=>{ setDotForm({date:d.date,dest:d.dest,montant:String(d.montant),note:d.note||""}); setEditDotRow(d); setDotModal(true); }}
+                  onDelete={()=>deleteDotRow(d.id)}
+                />,
+              ];
+            })}
+            empty="Aucune dotation"
+          />
         </div>
       )}
 
@@ -1141,7 +1181,7 @@ function Recettes({ data, setRaw, user }) {
       )}
 
       {dotModal && (
-        <Modal title="💰 Dotation monnaie" onClose={()=>setDotModal(false)}>
+        <Modal title={editDotRow?"✏️ Modifier la dotation":"💰 Dotation monnaie"} onClose={()=>{setDotModal(false);setEditDotRow(null);setDotForm({date:today(),dest:"caisse_jour",montant:"",note:""});}}>
           <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, padding:12, marginBottom:16, fontSize:13, color:"#92400e" }}>
             Dotation de base : <b>{fmt(DOTATION_MONNAIE)}</b>
           </div>
@@ -1157,7 +1197,7 @@ function Recettes({ data, setRaw, user }) {
           <Field label="Note"><Input value={dotForm.note} onChange={e=>setDotForm({...dotForm,note:e.target.value})}/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setDotModal(false)}>Annuler</Btn>
-            <Btn variant="warn" onClick={addDot} disabled={!dotForm.montant}>Enregistrer dotation</Btn>
+            <Btn variant="warn" onClick={editDotRow?saveDotEdit:addDot} disabled={!dotForm.montant}>{editDotRow?"Modifier":"Enregistrer dotation"}</Btn>
           </div>
         </Modal>
       )}
