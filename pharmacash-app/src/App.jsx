@@ -882,6 +882,7 @@ function Recettes({ data, setRaw, user }) {
   const [dotForm, setDotForm] = useState({ date:today(), dest:"caisse_jour", montant:"", note:"" });
   const [filterFrom, setFilterFrom] = useState(today());
   const [filterTo, setFilterTo] = useState(today());
+  const [editRow, setEditRow] = useState(null);
 
   const add = async () => {
     const hasEsp = Number(form.montantEsp) > 0;
@@ -907,6 +908,31 @@ function Recettes({ data, setRaw, user }) {
     const supaRow = { id, date:dotForm.date, dest:dotForm.dest, montant:Number(dotForm.montant), note:dotForm.note||null };
     await dbInsert("dotation_history", supaRow, setRaw, data, "dotationHistory", localRow);
     setDotModal(false); setDotForm({ date:today(), dest:"caisse_jour", montant:"", note:"" });
+  };
+
+  const deleteRec = async (id) => {
+    if (!confirm("Supprimer cette recette ?")) return;
+    await dbDelete("recettes", id, setRaw, data, "recettes");
+  };
+
+  const openEdit = (r) => {
+    if (isMobileMoney(r.mode)) {
+      setForm({ date:r.date, tranche:r.tranche||"jour", caissiere:r.caissiere||"", source:r.source, montantEsp:"", modeMobile:r.mode, montantMobile:String(r.montant), note:r.note||"" });
+    } else {
+      setForm({ date:r.date, tranche:r.tranche||"jour", caissiere:r.caissiere||"", source:r.source, montantEsp:String(r.montant), modeMobile:"orange_money", montantMobile:"", note:r.note||"" });
+    }
+    setEditRow(r);
+    setModal(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editRow) return;
+    const montant = Number(form.montantEsp||0) + Number(form.montantMobile||0);
+    const mode = Number(form.montantMobile)>0 ? form.modeMobile : "especes";
+    const supaRow = { date:form.date, tranche:form.source==="pharmacie"?form.tranche:null, caissiere:form.caissiere||null, source:form.source, montant, mode, note:form.note||null };
+    await dbUpdate("recettes", editRow.id, supaRow, setRaw, data, "recettes", r=>r.id===editRow.id?{...r,...supaRow,montant,mode}:r);
+    setModal(false); setEditRow(null);
+    setForm({ date:today(), tranche:"jour", caissiere:"", source:"pharmacie", montantEsp:"", modeMobile:"orange_money", montantMobile:"", note:"" });
   };
 
   const caissiers = [...new Set([
@@ -958,7 +984,7 @@ function Recettes({ data, setRaw, user }) {
       </div>
 
       <Table
-        cols={["Date","Tranche","Source","Caissière","Mode","Montant","Note"]}
+        cols={["Date","Tranche","Source","Caissière","Mode","Montant","Note",""]}
         rows={filtered.map(r=>{
           const src = r.source==="pharmacie" ? "🏥 Centrale" : ((data.depots||[]).find(d=>d.id===r.source)?.nom||"Dépôt");
           return [
@@ -967,13 +993,14 @@ function Recettes({ data, setRaw, user }) {
               ? (r.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>)
               : <Badge color="#7c3aed">📍 Dépôt</Badge>,
             src, r.caissiere||"—", modeLabel(r.mode), <b>{fmt(r.montant)}</b>, r.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onEdit={()=>openEdit(r)} onDelete={()=>deleteRec(r.id)}/>,
           ];
         })}
         empty="Aucune recette"
       />
 
       {modal && (
-        <Modal title="Enregistrer une recette" onClose={()=>setModal(false)}>
+        <Modal title={editRow?"Modifier la recette":"Enregistrer une recette"} onClose={()=>{setModal(false);setEditRow(null);}}>
           <Row>
             <Field label="Date" required half><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
             {form.source==="pharmacie" && (
@@ -1024,7 +1051,7 @@ function Recettes({ data, setRaw, user }) {
           <Field label="Note"><Textarea value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Optionnel"/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setModal(false)}>Annuler</Btn>
-            <Btn variant="success" onClick={add} disabled={!Number(form.montantEsp)&&!Number(form.montantMobile)}>Enregistrer</Btn>
+            <Btn variant="success" onClick={editRow?saveEdit:add} disabled={!Number(form.montantEsp)&&!Number(form.montantMobile)}>{editRow?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
@@ -1113,6 +1140,22 @@ function Recouvrement({ data, setRaw, user }) {
     await dbDelete("clients", id, setRaw, data, "clients");
   };
 
+  const deleteRecouv = async (r) => {
+    if (!confirm("Supprimer cet encaissement ?")) return;
+    const client = data.clients.find(c=>c.id===r.clientId);
+    if (client) {
+      const nouvelEncours = client.encours + Number(r.montant||0);
+      try { await supa.update("clients", client.id, { encours:nouvelEncours }); } catch {}
+      setRaw({ ...data, clients:data.clients.map(c=>c.id===client.id?{...c,encours:nouvelEncours}:c) });
+    }
+    await dbDelete("recouvrements", r.id, setRaw, data, "recouvrements");
+  };
+
+  const deleteDivers = async (id) => {
+    if (!confirm("Supprimer cet encaissement ?")) return;
+    await dbDelete("encaissements_divers", id, setRaw, data, "encaissementsDivers");
+  };
+
   const totalEncours = data.clients.reduce((s,c)=>s+Number(c.encours||0),0);
 
   return (
@@ -1161,19 +1204,22 @@ function Recouvrement({ data, setRaw, user }) {
 
       <Divider label="Historique des encaissements"/>
       <Table
-        cols={["Date","Client","Montant","Mode","Note"]}
+        cols={["Date","Client","Montant","Mode","Note",""]}
         rows={[...data.recouvrements].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
           const c=data.clients.find(x=>x.id===r.clientId);
-          return [fmtDate(r.date),c?.nom||"—",<b style={{color:"#047857"}}>{fmt(r.montant)}</b>,modeLabel(r.mode)||"—",r.note||"—"];
+          return [fmtDate(r.date),c?.nom||"—",<b style={{color:"#047857"}}>{fmt(r.montant)}</b>,modeLabel(r.mode)||"—",r.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onDelete={()=>deleteRecouv(r)}/>,
+          ];
         })}
         empty="Aucun encaissement enregistré"
       />
 
       <Divider label="Encaissements divers / Tiers"/>
       <Table
-        cols={["Date","Nom / Tiers","Motif","Mode","Montant","Note"]}
+        cols={["Date","Nom / Tiers","Motif","Mode","Montant","Note",""]}
         rows={[...(data.encaissementsDivers||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>[
           fmtDate(e.date),<b>{e.nom}</b>,e.motif||"—",modeLabel(e.mode),<b style={{color:"#047857"}}>{fmt(e.montant)}</b>,e.note||"—",
+          <EditDeleteBtns isAdmin={isAdmin} onDelete={()=>deleteDivers(e.id)}/>,
         ])}
         empty="Aucun encaissement divers"
       />
@@ -1267,6 +1313,11 @@ function Versements({ data, setRaw, user }) {
     setModal(false); setForm({ date:today(), banque:"", bordereau:"", montant:"", source:"pharmacie", typeVers:"especes", note:"" });
   };
 
+  const deleteVers = async (id) => {
+    if (!confirm("Supprimer ce versement ?")) return;
+    await dbDelete("versements_banque", id, setRaw, data, "versementsBanque");
+  };
+
   const vers = [...data.versementsBanque].sort((a,b)=>b.date.localeCompare(a.date));
 
   return (
@@ -1276,13 +1327,15 @@ function Versements({ data, setRaw, user }) {
         <Btn onClick={()=>setModal(true)}><span style={{ display:"flex", alignItems:"center", gap:6 }}><Icon name="plus" size={15}/>Nouveau versement</span></Btn>
       </div>
       <Table
-        cols={["Date","Banque","N° Bordereau","Source","Type fonds","Montant","Note"]}
+        cols={["Date","Banque","N° Bordereau","Source","Type fonds","Montant","Note",""]}
         rows={vers.map(v=>{
           const src = v.source==="pharmacie"?"🏥 Centrale":((data.depots||[]).find(d=>d.id===v.source)?.nom||"—");
           const tv = v.typeVers;
           const tvLabel = !tv||tv==="especes"?<Badge color="#0369a1">💵 Espèces</Badge>
             :(() => { const op=MODES_MOBILE.find(m=>m.value===tv); return op?<Badge color={op.color}>{op.label}</Badge>:<Badge color="#6b7280">{tv}</Badge>; })();
-          return [fmtDate(v.date),v.banque||"—",v.bordereau||"—",src,tvLabel,<b style={{color:"#0369a1"}}>{fmt(v.montant)}</b>,v.note||"—"];
+          return [fmtDate(v.date),v.banque||"—",v.bordereau||"—",src,tvLabel,<b style={{color:"#0369a1"}}>{fmt(v.montant)}</b>,v.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onDelete={()=>deleteVers(v.id)}/>,
+          ];
         })}
         empty="Aucun versement"
       />
@@ -1348,6 +1401,11 @@ function Depots({ data, setRaw, user }) {
     await dbDelete("depots", id, setRaw, data, "depots");
   };
 
+  const deleteVerseDepot = async (id) => {
+    if (!confirm("Supprimer ce versement ?")) return;
+    await dbDelete("verse_depots", id, setRaw, data, "verseDepots");
+  };
+
   const caissiers = [...new Set([
     ...data.users.filter(u=>u.role==="caissier"||u.role==="admin").map(u=>u.name),
     ...(data.responsables||[]).map(r=>r.nom),
@@ -1389,10 +1447,12 @@ function Depots({ data, setRaw, user }) {
 
       <Divider label="Historique des versements reçus"/>
       <Table
-        cols={["Date","Dépôt","Responsable","Montant reçu","Note"]}
+        cols={["Date","Dépôt","Responsable","Montant reçu","Note",""]}
         rows={[...(data.verseDepots||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(v=>{
           const dep=data.depots.find(d=>d.id===v.depotId);
-          return [fmtDate(v.date),dep?.nom||"—",v.caissiere||"—",<b style={{color:"#047857"}}>{fmt(v.montant)}</b>,v.note||"—"];
+          return [fmtDate(v.date),dep?.nom||"—",v.caissiere||"—",<b style={{color:"#047857"}}>{fmt(v.montant)}</b>,v.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onDelete={()=>deleteVerseDepot(v.id)}/>,
+          ];
         })}
         empty="Aucun versement reçu"
       />
@@ -1444,13 +1504,26 @@ function Depenses({ data, setRaw, user }) {
   const [form, setForm] = useState({ date:today(), categorie:"loyer", libelle:"", montant:"", mode:"especes", note:"" });
   const CATS = ["loyer","salaires","eau/électricité","transport","fournitures","maintenance","communication","divers"];
 
+  const [editRow, setEditRow] = useState(null);
+
   const add = async () => {
     if (!form.montant||!form.libelle) return;
-    const id = uid();
-    const localRow = { ...form, id, montant:Number(form.montant) };
-    const supaRow = { id, date:form.date, categorie:form.categorie, libelle:form.libelle, montant:Number(form.montant), mode:form.mode, note:form.note||null };
-    await dbInsert("depenses", supaRow, setRaw, data, "depenses", localRow);
+    if (editRow) {
+      const supaRow = { date:form.date, categorie:form.categorie, libelle:form.libelle, montant:Number(form.montant), mode:form.mode, note:form.note||null };
+      await dbUpdate("depenses", editRow.id, supaRow, setRaw, data, "depenses", d=>d.id===editRow.id?{...d,...supaRow,montant:Number(form.montant)}:d);
+      setEditRow(null);
+    } else {
+      const id = uid();
+      const localRow = { ...form, id, montant:Number(form.montant) };
+      const supaRow = { id, date:form.date, categorie:form.categorie, libelle:form.libelle, montant:Number(form.montant), mode:form.mode, note:form.note||null };
+      await dbInsert("depenses", supaRow, setRaw, data, "depenses", localRow);
+    }
     setModal(false); setForm({ date:today(), categorie:"loyer", libelle:"", montant:"", mode:"especes", note:"" });
+  };
+
+  const deleteDep = async (id) => {
+    if (!confirm("Supprimer cette dépense ?")) return;
+    await dbDelete("depenses", id, setRaw, data, "depenses");
   };
 
   const depenses = [...data.depenses].sort((a,b)=>b.date.localeCompare(a.date));
@@ -1478,7 +1551,7 @@ function Depenses({ data, setRaw, user }) {
         empty="Aucune dépense"
       />
       {modal && (
-        <Modal title="Enregistrer une dépense" onClose={()=>setModal(false)}>
+        <Modal title={editRow?"Modifier la dépense":"Enregistrer une dépense"} onClose={()=>{setModal(false);setEditRow(null);}}>
           <Row>
             <Field label="Date" required half><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
             <Field label="Catégorie" required half>
@@ -1498,7 +1571,7 @@ function Depenses({ data, setRaw, user }) {
           </Row>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setModal(false)}>Annuler</Btn>
-            <Btn variant="danger" onClick={add} disabled={!form.montant||!form.libelle}>Enregistrer</Btn>
+            <Btn variant="danger" onClick={add} disabled={!form.montant||!form.libelle}>{editRow?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
