@@ -53,9 +53,12 @@ const pushQueue = (op) => { const q = loadQueue(); q.push(op); saveQueue(q); };
 const DOTATION_MONNAIE = 300000; // FCFA
 
 // ─── CONFIG ALERTES ───────────────────────────────────────────────────────────
-const ALERT_EMAIL     = "phcie.bethesda.sangouine@gmail.com";
-const ALERT_SEUIL_CAISSE = 300000;   // FCFA — alerte si solde < ce montant
-const ALERT_DEPOT_JOURS  = 5;        // jours sans versement avant alerte
+const ALERT_EMAIL          = "phcie.bethesda.sangouine@gmail.com";
+const ALERT_SEUIL_CAISSE   = 300000;   // FCFA — alerte si solde < ce montant
+const ALERT_DEPOT_JOURS    = 5;        // jours sans versement avant alerte
+const ALERT_ENCOURS_MAX    = 2500000;  // FCFA — alerte si encours dépôt > ce montant
+const ALERT_ECART_INV      = 50000;    // FCFA — alerte si écart inventaire > ce montant
+const ALERT_INV_JOURS      = 30;       // jours sans inventaire avant alerte
 const ALERTS_SENT_KEY    = "pharmacash_alerts_sent"; // cache local alertes déjà envoyées
 
 // Charger/sauver les alertes déjà envoyées (évite doublons)
@@ -105,6 +108,38 @@ async function checkAndSendAlerts(data, soldes) {
     if (ok) markAlertSent(alertKeyC);
   }
 
+  // ── Alertes encours dépôt élevé ─────────────────────────────────────────
+  for (const depot of (data.depots || [])) {
+    const enc = calcEncoursDepot(depot.id, data);
+    // Alerte encours trop élevé
+    const alertKeyE = `encours_eleve_${depot.id}_${t}`;
+    if (enc.theorique > ALERT_ENCOURS_MAX && !wasAlertSent(alertKeyE)) {
+      const ok = await sendAlertEmail(
+        `⚠️ PharmaCash — ${depot.nom} : encours élevé`,
+        `<h2 style="color:#dc2626">⚠️ Encours Dépôt Élevé</h2>
+        <p>L'encours du dépôt <b>${depot.nom}</b> dépasse le seuil maximum.</p>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:8px;background:#fef2f2"><b>Dépôt</b></td><td style="padding:8px"><b>${depot.nom}</b></td></tr>
+          <tr><td style="padding:8px;background:#fef2f2"><b>Encours théorique</b></td><td style="padding:8px;color:#dc2626;font-size:18px"><b>${new Intl.NumberFormat('fr-FR').format(enc.theorique)} FCFA</b></td></tr>
+          <tr><td style="padding:8px;background:#fef2f2"><b>Seuil maximum</b></td><td style="padding:8px">${new Intl.NumberFormat('fr-FR').format(ALERT_ENCOURS_MAX)} FCFA</td></tr>
+        </table>
+        <p style="color:#6b7280;margin-top:16px">Ceci est une alerte automatique de PharmaCash.</p>`
+      );
+      if (ok) markAlertSent(alertKeyE);
+    }
+    // Alerte inventaire en retard
+    const alertKeyI = `inv_retard_${depot.id}_${t}`;
+    if (enc.joursDepuisInv >= ALERT_INV_JOURS && !wasAlertSent(alertKeyI)) {
+      const ok = await sendAlertEmail(
+        `⚠️ PharmaCash — ${depot.nom} : inventaire en retard`,
+        `<h2 style="color:#ea580c">⚠️ Inventaire en Retard</h2>
+        <p>Aucun inventaire physique depuis <b>${enc.joursDepuisInv === 999 ? "jamais" : enc.joursDepuisInv+" jours"}</b> pour le dépôt <b>${depot.nom}</b>.</p>
+        <p style="color:#6b7280;margin-top:16px">Ceci est une alerte automatique de PharmaCash.</p>`
+      );
+      if (ok) markAlertSent(alertKeyI);
+    }
+  }
+
   // ── Alertes dépôts sans versement ────────────────────────────────────────
   for (const depot of (data.depots || [])) {
     const alertKeyD = `depot_\${depot.id}_\${t}`;
@@ -146,6 +181,9 @@ const EMPTY_DATA = {
   responsables: [],
   connexions: [], // { id, user_id, user_name, role, date, heure, navigateur }
   clotures: [], // { id, date, tranche, caissiere, montantTheorique, montantPhysique, ecart, note }
+  dotationsDepots: [],   // { id, depotId, type, date, montant, note }
+  transfertsDepots: [],  // { id, depotId, date, montant, motif, note }
+  inventairesDepots: [], // { id, depotId, date, responsable, montantTheorique, montantPhysique, ecart, note }
 };
 
 // Normalisation snake_case → camelCase depuis Supabase
@@ -163,6 +201,9 @@ const norm = {
   responsables: (r) => ({ id:r.id, nom:r.nom, depotId:r.depot_id||null, telephone:r.telephone||"" }),
   connexions: (r) => ({ id:r.id, userId:r.user_id, userName:r.user_name, role:r.role, date:r.date, heure:r.heure, navigateur:r.navigateur||"" }),
   clotures: (r) => ({ id:r.id, date:r.date, tranche:r.tranche, caissiere:r.caissiere||'', montantTheorique:Number(r.montant_theorique||0), montantPhysique:Number(r.montant_physique||0), ecart:Number(r.ecart||0), note:r.note||'' }),
+  dotationsDepots:   (r) => ({ id:r.id, depotId:r.depot_id, type:r.type, date:r.date, montant:Number(r.montant||0), note:r.note||'' }),
+  transfertsDepots:  (r) => ({ id:r.id, depotId:r.depot_id, date:r.date, montant:Number(r.montant||0), motif:r.motif, note:r.note||'' }),
+  inventairesDepots: (r) => ({ id:r.id, depotId:r.depot_id, date:r.date, responsable:r.responsable||'', montantTheorique:Number(r.montant_theorique||0), montantPhysique:Number(r.montant_physique||0), ecart:Number(r.ecart||0), note:r.note||'' }),
 };
 
 // ─── OPÉRATIONS DB ───────────────────────────────────────────────────────────
@@ -411,6 +452,41 @@ function calcSoldes(data) {
 // Alias pour compat sidebar
 const calcSoldeCaisse = (data) => { const s=calcSoldes(data); return { solde: s.soldeEspeces, ...s }; };
 
+// ─── CALCUL ENCOURS DÉPÔT ────────────────────────────────────────────────────
+function calcEncoursDepot(depotId, data) {
+  // Dotation initiale
+  const dotInitiale = (data.dotationsDepots||[])
+    .filter(d=>d.depotId===depotId&&d.type==="initiale")
+    .reduce((s,d)=>s+d.montant, 0);
+  // Livraisons reçues
+  const livraisons = (data.dotationsDepots||[])
+    .filter(d=>d.depotId===depotId&&d.type==="livraison")
+    .reduce((s,d)=>s+d.montant, 0);
+  // Versements remis à la comptable (réduit encours)
+  const versements = (data.verseDepots||[])
+    .filter(v=>v.depotId===depotId)
+    .reduce((s,v)=>s+v.montant, 0);
+  // Transferts retour (périmés, vol, avariés)
+  const transferts = (data.transfertsDepots||[])
+    .filter(t=>t.depotId===depotId)
+    .reduce((s,t)=>s+t.montant, 0);
+
+  const theorique = dotInitiale + livraisons - versements - transferts;
+
+  // Dernier inventaire
+  const inventaires = (data.inventairesDepots||[])
+    .filter(i=>i.depotId===depotId)
+    .sort((a,b)=>b.date.localeCompare(a.date));
+  const dernierInv = inventaires[0] || null;
+
+  // Jours depuis dernier inventaire
+  const joursDepuisInv = dernierInv
+    ? Math.floor((new Date(today())-new Date(dernierInv.date))/(1000*60*60*24))
+    : 999;
+
+  return { dotInitiale, livraisons, versements, transferts, theorique, dernierInv, joursDepuisInv };
+}
+
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 function LoginPage({ onLogin, users, refetch }) {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
@@ -534,6 +610,15 @@ function Dashboard({ data }) {
           }
           if (jours >= ALERT_DEPOT_JOURS) {
             alertes.push({ type:"warn", msg:`📍 ${dep.nom} : aucun versement depuis ${jours} jour(s)` });
+          }
+          // Encours élevé
+          const enc = calcEncoursDepot(dep.id, data);
+          if (enc.theorique > ALERT_ENCOURS_MAX) {
+            alertes.push({ type:"danger", msg:`📦 ${dep.nom} : encours élevé ${new Intl.NumberFormat('fr-FR').format(enc.theorique)} FCFA > seuil ${new Intl.NumberFormat('fr-FR').format(ALERT_ENCOURS_MAX)} FCFA` });
+          }
+          // Inventaire en retard
+          if (enc.joursDepuisInv >= ALERT_INV_JOURS) {
+            alertes.push({ type:"warn", msg:`🔍 ${dep.nom} : aucun inventaire depuis ${enc.joursDepuisInv===999?"jamais":enc.joursDepuisInv+" jours"}` });
           }
         });
         if (!alertes.length) return null;
@@ -1367,13 +1452,34 @@ function Versements({ data, setRaw, user }) {
   );
 }
 
+
 // ─── DÉPÔTS EXTERNES ─────────────────────────────────────────────────────────
 function Depots({ data, setRaw, user }) {
   const isAdmin = user?.role === 'admin';
-  const [verseModal, setVerseModal] = useState(false);
-  const [depotModal, setDepotModal] = useState(false);
+  const [verseModal, setVerseModal]       = useState(false);
+  const [depotModal, setDepotModal]       = useState(false);
+  const [dotModal, setDotModal]           = useState(false);
+  const [transfertModal, setTransfertModal] = useState(false);
+  const [inventaireModal, setInventaireModal] = useState(false);
+  const [selectedDepot, setSelectedDepot] = useState(null);
   const [vForm, setVForm] = useState({ depotId:"", montant:"", date:today(), caissiere:"", note:"" });
   const [dForm, setDForm] = useState({ nom:"", localite:"" });
+  const [dotForm, setDotForm] = useState({ depotId:"", type:"livraison", date:today(), montant:"", note:"" });
+  const [trForm, setTrForm] = useState({ depotId:"", date:today(), montant:"", motif:"peremption", note:"" });
+  const [invForm, setInvForm] = useState({ depotId:"", date:today(), responsable:"", montantPhysique:"", note:"" });
+
+  const caissiers = [...new Set([
+    ...data.users.filter(u=>u.role==="caissier"||u.role==="admin").map(u=>u.name),
+    ...(data.responsables||[]).map(r=>r.nom),
+  ])];
+
+  const MOTIFS = [
+    { value:"peremption",      label:"⏰ Péremption" },
+    { value:"vol",             label:"🚨 Vol" },
+    { value:"avarie",          label:"💧 Avarie / Casse" },
+    { value:"transfert_central", label:"🔄 Transfert vers centrale" },
+    { value:"autre",           label:"📝 Autre" },
+  ];
 
   const addVerse = async () => {
     if (!vForm.depotId||!vForm.montant) return;
@@ -1387,9 +1493,7 @@ function Depots({ data, setRaw, user }) {
   const addDepot = async () => {
     if (!dForm.nom) return;
     const id = uid();
-    const localRow = { id, ...dForm };
-    const supaRow = { id, nom:dForm.nom, localite:dForm.localite||null };
-    await dbInsert("depots", supaRow, setRaw, data, "depots", localRow);
+    await dbInsert("depots", { id, nom:dForm.nom, localite:dForm.localite||null }, setRaw, data, "depots", { id, ...dForm });
     setDepotModal(false); setDForm({ nom:"", localite:"" });
   };
 
@@ -1403,45 +1507,123 @@ function Depots({ data, setRaw, user }) {
     await dbDelete("verse_depots", id, setRaw, data, "verseDepots");
   };
 
-  const caissiers = [...new Set([
-    ...data.users.filter(u=>u.role==="caissier"||u.role==="admin").map(u=>u.name),
-    ...(data.responsables||[]).map(r=>r.nom),
-  ])];
+  const addDotation = async () => {
+    if (!dotForm.depotId||!dotForm.montant) return;
+    const id = uid();
+    const localRow = { id, depotId:dotForm.depotId, type:dotForm.type, date:dotForm.date, montant:Number(dotForm.montant), note:dotForm.note||"" };
+    const supaRow  = { id, depot_id:dotForm.depotId, type:dotForm.type, date:dotForm.date, montant:Number(dotForm.montant), note:dotForm.note||null };
+    await dbInsert("dotations_depots", supaRow, setRaw, data, "dotationsDepots", localRow);
+    setDotModal(false); setDotForm({ depotId:"", type:"livraison", date:today(), montant:"", note:"" });
+  };
+
+  const addTransfert = async () => {
+    if (!trForm.depotId||!trForm.montant) return;
+    const id = uid();
+    const localRow = { id, depotId:trForm.depotId, date:trForm.date, montant:Number(trForm.montant), motif:trForm.motif, note:trForm.note||"" };
+    const supaRow  = { id, depot_id:trForm.depotId, date:trForm.date, montant:Number(trForm.montant), motif:trForm.motif, note:trForm.note||null };
+    await dbInsert("transferts_depots", supaRow, setRaw, data, "transfertsDepots", localRow);
+    setTransfertModal(false); setTrForm({ depotId:"", date:today(), montant:"", motif:"peremption", note:"" });
+  };
+
+  const addInventaire = async () => {
+    if (!invForm.depotId||!invForm.montantPhysique) return;
+    const enc = calcEncoursDepot(invForm.depotId, data);
+    const physique = Number(invForm.montantPhysique);
+    const ecart = physique - enc.theorique;
+    const id = uid();
+    const localRow = { id, depotId:invForm.depotId, date:invForm.date, responsable:invForm.responsable, montantTheorique:enc.theorique, montantPhysique:physique, ecart, note:invForm.note||"" };
+    const supaRow  = { id, depot_id:invForm.depotId, date:invForm.date, responsable:invForm.responsable||null, montant_theorique:enc.theorique, montant_physique:physique, ecart, note:invForm.note||null };
+    await dbInsert("inventaires_depots", supaRow, setRaw, data, "inventairesDepots", localRow);
+    // Alerte si écart > seuil
+    if (Math.abs(ecart) > ALERT_ECART_INV) {
+      const dep = data.depots.find(d=>d.id===invForm.depotId);
+      sendAlertEmail(
+        `⚠️ PharmaCash — ${dep?.nom} : écart inventaire détecté`,
+        `<h2 style="color:#dc2626">⚠️ Écart Inventaire</h2>
+        <p>Un écart significatif a été détecté lors de l'inventaire de <b>${dep?.nom}</b>.</p>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:8px;background:#fef2f2"><b>Encours théorique</b></td><td style="padding:8px">${fmt(enc.theorique)}</td></tr>
+          <tr><td style="padding:8px;background:#fef2f2"><b>Inventaire physique</b></td><td style="padding:8px">${fmt(physique)}</td></tr>
+          <tr><td style="padding:8px;background:#fef2f2"><b>Écart</b></td><td style="padding:8px;color:#dc2626;font-size:18px"><b>${ecart>0?"+":""}${fmt(ecart)}</b></td></tr>
+        </table>`
+      ).catch(()=>{});
+    }
+    setInventaireModal(false); setInvForm({ depotId:"", date:today(), responsable:"", montantPhysique:"", note:"" });
+  };
 
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <h2 style={{ margin:0, fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Dépôts externes</h2>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {isAdmin && <Btn variant="ghost" onClick={()=>setDepotModal(true)} style={{ fontSize:13 }}>+ Nouveau dépôt</Btn>}
+          <Btn variant="ghost" style={{ fontSize:13, background:"#f0fdf4", color:"#047857" }} onClick={()=>setDotModal(true)}>📦 Livraison</Btn>
+          <Btn variant="ghost" style={{ fontSize:13, background:"#fff7ed", color:"#ea580c" }} onClick={()=>setTransfertModal(true)}>↩️ Retour/Transfert</Btn>
+          <Btn variant="ghost" style={{ fontSize:13, background:"#faf5ff", color:"#7c3aed" }} onClick={()=>setInventaireModal(true)}>🔍 Inventaire</Btn>
           <Btn onClick={()=>setVerseModal(true)}><span style={{ display:"flex", alignItems:"center", gap:6 }}><Icon name="plus" size={15}/>Réceptionner versement</span></Btn>
         </div>
       </div>
 
-      <Divider label="Liste des dépôts"/>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:12, marginBottom:22 }}>
+      {/* ── CARTES DÉPÔTS ── */}
+      <Divider label="Comptes dépôts — Encours théorique"/>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:14, marginBottom:24 }}>
         {data.depots.map(dep=>{
-          const recTot   = data.recettes.filter(r=>r.source===dep.id).reduce((s,r)=>s+Number(r.montant||0),0);
-          const verseTot = (data.verseDepots||[]).filter(v=>v.depotId===dep.id).reduce((s,v)=>s+Number(v.montant||0),0);
+          const enc = calcEncoursDepot(dep.id, data);
+          const alert = enc.theorique > ALERT_ENCOURS_MAX;
+          const invRetard = enc.joursDepuisInv >= ALERT_INV_JOURS;
           return (
-            <div key={dep.id} style={{ background:"#fff", borderRadius:12, padding:18, boxShadow:"0 1px 6px #0001", borderTop:"3px solid #7c3aed" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div key={dep.id} style={{ background:"#fff", borderRadius:14, padding:18, boxShadow:"0 1px 6px #0001", borderTop:`3px solid ${alert?"#dc2626":"#7c3aed"}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
                   <div style={{ fontWeight:800, fontSize:15 }}>📍 {dep.nom}</div>
-                  <div style={{ fontSize:12, color:"#6b7280", marginBottom:10 }}>{dep.localite}</div>
+                  <div style={{ fontSize:12, color:"#6b7280" }}>{dep.localite}</div>
                 </div>
                 {isAdmin && <button onClick={()=>removeDepot(dep.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626", fontSize:12 }}>✕</button>}
               </div>
-              <div style={{ fontSize:12, color:"#6b7280" }}>Recettes totales</div>
-              <div style={{ fontWeight:800, fontSize:17, color:"#0369a1" }}>{fmt(recTot)}</div>
-              <div style={{ fontSize:12, color:"#6b7280", marginTop:6 }}>Versé à la centrale</div>
-              <div style={{ fontWeight:800, fontSize:15, color:"#047857" }}>{fmt(verseTot)}</div>
-              {recTot-verseTot>0 && <div style={{ fontSize:12, color:"#dc2626", fontWeight:600, marginTop:4 }}>Non versé : {fmt(recTot-verseTot)}</div>}
+
+              {/* Encours */}
+              <div style={{ background:alert?"#fef2f2":"#f0fdf4", borderRadius:10, padding:"12px 14px", marginBottom:12 }}>
+                <div style={{ fontSize:11, color:alert?"#dc2626":"#047857", fontWeight:700, textTransform:"uppercase", marginBottom:4 }}>
+                  {alert?"⚠️ Encours élevé":"✅ Encours théorique"}
+                </div>
+                <div style={{ fontSize:24, fontWeight:900, color:alert?"#dc2626":"#047857" }}>{fmt(enc.theorique)}</div>
+              </div>
+
+              {/* Détail */}
+              <div style={{ fontSize:12, color:"#6b7280", lineHeight:2 }}>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <span>📦 Dotation initiale</span><b style={{color:"#374151"}}>{fmt(enc.dotInitiale)}</b>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <span>➕ Livraisons</span><b style={{color:"#047857"}}>{fmt(enc.livraisons)}</b>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <span>💰 Versements comptable</span><b style={{color:"#dc2626"}}>−{fmt(enc.versements)}</b>
+                </div>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <span>↩️ Retours/Transferts</span><b style={{color:"#dc2626"}}>−{fmt(enc.transferts)}</b>
+                </div>
+              </div>
+
+              {/* Dernier inventaire */}
+              <div style={{ marginTop:10, padding:"8px 12px", background:invRetard?"#fff7ed":"#f8fafc", borderRadius:8 }}>
+                <div style={{ fontSize:11, color:invRetard?"#ea580c":"#6b7280", fontWeight:600 }}>
+                  🔍 Dernier inventaire : {enc.dernierInv ? fmtDate(enc.dernierInv.date) : "Jamais"}
+                  {invRetard && ` — ⚠️ ${enc.joursDepuisInv===999?"Aucun inventaire":"Retard "+enc.joursDepuisInv+"j"}`}
+                </div>
+                {enc.dernierInv && (
+                  <div style={{ fontSize:11, color: Math.abs(enc.dernierInv.ecart)>ALERT_ECART_INV?"#dc2626":"#047857", marginTop:2 }}>
+                    Écart : {enc.dernierInv.ecart>0?"+":""}{fmt(enc.dernierInv.ecart)}
+                    {Math.abs(enc.dernierInv.ecart)>ALERT_ECART_INV?" ⚠️":" ✅"}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
 
+      {/* ── HISTORIQUE VERSEMENTS ── */}
       <Divider label="Historique des versements reçus"/>
       <Table
         cols={["Date","Dépôt","Responsable","Montant reçu","Note",""]}
@@ -1454,21 +1636,74 @@ function Depots({ data, setRaw, user }) {
         empty="Aucun versement reçu"
       />
 
+      {/* ── HISTORIQUE LIVRAISONS ── */}
+      <Divider label="Historique des livraisons"/>
+      <Table
+        cols={["Date","Dépôt","Type","Montant","Note",""]}
+        rows={[...(data.dotationsDepots||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(d=>{
+          const dep=data.depots.find(x=>x.id===d.depotId);
+          return [
+            fmtDate(d.date), dep?.nom||"—",
+            d.type==="initiale"?<Badge color="#0369a1">📦 Dotation initiale</Badge>:<Badge color="#047857">➕ Livraison</Badge>,
+            <b style={{color:"#047857"}}>{fmt(d.montant)}</b>, d.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onDelete={async()=>{ if(confirm("Supprimer ?")) await dbDelete("dotations_depots",d.id,setRaw,data,"dotationsDepots"); }}/>,
+          ];
+        })}
+        empty="Aucune livraison enregistrée"
+      />
+
+      {/* ── HISTORIQUE RETOURS ── */}
+      <Divider label="Historique des retours / transferts"/>
+      <Table
+        cols={["Date","Dépôt","Motif","Montant","Note",""]}
+        rows={[...(data.transfertsDepots||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(t=>{
+          const dep=data.depots.find(x=>x.id===t.depotId);
+          const motifLabel = { peremption:"⏰ Péremption", vol:"🚨 Vol", avarie:"💧 Avarie", transfert_central:"🔄 Transfert central", autre:"📝 Autre" };
+          return [
+            fmtDate(t.date), dep?.nom||"—",
+            <Badge color="#ea580c">{motifLabel[t.motif]||t.motif}</Badge>,
+            <b style={{color:"#dc2626"}}>{fmt(t.montant)}</b>, t.note||"—",
+            <EditDeleteBtns isAdmin={isAdmin} onDelete={async()=>{ if(confirm("Supprimer ?")) await dbDelete("transferts_depots",t.id,setRaw,data,"transfertsDepots"); }}/>,
+          ];
+        })}
+        empty="Aucun retour enregistré"
+      />
+
+      {/* ── HISTORIQUE INVENTAIRES ── */}
+      <Divider label="Historique des inventaires physiques"/>
+      <Table
+        cols={["Date","Dépôt","Responsable","Théorique","Physique","Écart","Statut","Note"]}
+        rows={[...(data.inventairesDepots||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(i=>{
+          const dep=data.depots.find(x=>x.id===i.depotId);
+          const ok = Math.abs(i.ecart)<=ALERT_ECART_INV;
+          return [
+            fmtDate(i.date), dep?.nom||"—", i.responsable||"—",
+            fmt(i.montantTheorique),
+            fmt(i.montantPhysique),
+            <b style={{color:i.ecart===0?"#047857":i.ecart>0?"#0369a1":"#dc2626"}}>{i.ecart>0?"+":""}{fmt(i.ecart)}</b>,
+            <Badge color={ok?"#047857":"#dc2626"}>{ok?"✅ Conforme":"⚠️ Écart"}</Badge>,
+            i.note||"—",
+          ];
+        })}
+        empty="Aucun inventaire enregistré"
+      />
+
+      {/* ── MODALS ── */}
       {verseModal && (
         <Modal title="Réceptionner un versement de dépôt" onClose={()=>setVerseModal(false)}>
           <Field label="Dépôt" required>
             <Select value={vForm.depotId} onChange={e=>setVForm({...vForm,depotId:e.target.value})}>
               <option value="">— Sélectionner —</option>
-              {data.depots.map(d=><option key={d.id} value={d.id}>{d.nom} ({d.localite})</option>)}
+              {data.depots.map(d=><option key={d.id} value={d.id}>{d.nom}</option>)}
             </Select>
           </Field>
           <Row>
-            <Field label="Montant reçu (FCFA)" required half><Input type="number" value={vForm.montant} onChange={e=>setVForm({...vForm,montant:e.target.value})}/></Field>
+            <Field label="Montant (FCFA)" required half><Input type="number" value={vForm.montant} onChange={e=>setVForm({...vForm,montant:e.target.value})}/></Field>
             <Field label="Date" required half><Input type="date" value={vForm.date} onChange={e=>setVForm({...vForm,date:e.target.value})}/></Field>
           </Row>
-          <Field label="Responsable du dépôt">
-            <Input list="dep-caissieres" value={vForm.caissiere} onChange={e=>setVForm({...vForm,caissiere:e.target.value})} placeholder="Nom du responsable"/>
-            <datalist id="dep-caissieres">{caissiers.map(c=><option key={c} value={c}/>)}</datalist>
+          <Field label="Responsable">
+            <Input list="dep-resp" value={vForm.caissiere} onChange={e=>setVForm({...vForm,caissiere:e.target.value})} placeholder="Nom du responsable"/>
+            <datalist id="dep-resp">{caissiers.map(c=><option key={c} value={c}/>)}</datalist>
           </Field>
           <Field label="Note"><Input value={vForm.note} onChange={e=>setVForm({...vForm,note:e.target.value})}/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
@@ -1478,13 +1713,111 @@ function Depots({ data, setRaw, user }) {
         </Modal>
       )}
 
+      {dotModal && (
+        <Modal title="📦 Dotation initiale / Livraison" onClose={()=>setDotModal(false)}>
+          <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#166534" }}>
+            La dotation initiale est le montant de départ du dépôt. Les livraisons augmentent l'encours sans impacter la caisse principale.
+          </div>
+          <Field label="Dépôt" required>
+            <Select value={dotForm.depotId} onChange={e=>setDotForm({...dotForm,depotId:e.target.value})}>
+              <option value="">— Sélectionner —</option>
+              {data.depots.map(d=><option key={d.id} value={d.id}>{d.nom}</option>)}
+            </Select>
+          </Field>
+          <Field label="Type" required>
+            <Select value={dotForm.type} onChange={e=>setDotForm({...dotForm,type:e.target.value})}>
+              <option value="initiale">📦 Dotation initiale</option>
+              <option value="livraison">➕ Livraison complémentaire</option>
+            </Select>
+          </Field>
+          <Row>
+            <Field label="Montant (FCFA)" required half><Input type="number" value={dotForm.montant} onChange={e=>setDotForm({...dotForm,montant:e.target.value})}/></Field>
+            <Field label="Date" required half><Input type="date" value={dotForm.date} onChange={e=>setDotForm({...dotForm,date:e.target.value})}/></Field>
+          </Row>
+          <Field label="Note"><Input value={dotForm.note} onChange={e=>setDotForm({...dotForm,note:e.target.value})} placeholder="Description des produits livrés..."/></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setDotModal(false)}>Annuler</Btn>
+            <Btn variant="success" onClick={addDotation} disabled={!dotForm.depotId||!dotForm.montant}>Enregistrer</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {transfertModal && (
+        <Modal title="↩️ Retour / Transfert vers centrale" onClose={()=>setTransfertModal(false)}>
+          <Field label="Dépôt" required>
+            <Select value={trForm.depotId} onChange={e=>setTrForm({...trForm,depotId:e.target.value})}>
+              <option value="">— Sélectionner —</option>
+              {data.depots.map(d=><option key={d.id} value={d.id}>{d.nom} — Encours : {fmt(calcEncoursDepot(d.id,data).theorique)}</option>)}
+            </Select>
+          </Field>
+          <Field label="Motif" required>
+            <Select value={trForm.motif} onChange={e=>setTrForm({...trForm,motif:e.target.value})}>
+              {MOTIFS.map(m=><option key={m.value} value={m.value}>{m.label}</option>)}
+            </Select>
+          </Field>
+          <Row>
+            <Field label="Montant (FCFA)" required half><Input type="number" value={trForm.montant} onChange={e=>setTrForm({...trForm,montant:e.target.value})}/></Field>
+            <Field label="Date" required half><Input type="date" value={trForm.date} onChange={e=>setTrForm({...trForm,date:e.target.value})}/></Field>
+          </Row>
+          <Field label="Note"><Input value={trForm.note} onChange={e=>setTrForm({...trForm,note:e.target.value})} placeholder="Détails du retour..."/></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setTransfertModal(false)}>Annuler</Btn>
+            <Btn variant="danger" onClick={addTransfert} disabled={!trForm.depotId||!trForm.montant}>Enregistrer</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {inventaireModal && (
+        <Modal title="🔍 Inventaire physique" onClose={()=>setInventaireModal(false)}>
+          <Field label="Dépôt" required>
+            <Select value={invForm.depotId} onChange={e=>setInvForm({...invForm,depotId:e.target.value})}>
+              <option value="">— Sélectionner —</option>
+              {data.depots.map(d=><option key={d.id} value={d.id}>{d.nom}</option>)}
+            </Select>
+          </Field>
+          {invForm.depotId && (() => {
+            const enc = calcEncoursDepot(invForm.depotId, data);
+            const phys = Number(invForm.montantPhysique||0);
+            const ecart = phys - enc.theorique;
+            return (
+              <div style={{ background:"#f0f9ff", borderRadius:10, padding:"14px 16px", marginBottom:14 }}>
+                <div style={{ fontSize:12, color:"#0369a1", fontWeight:700, marginBottom:4 }}>ENCOURS THÉORIQUE</div>
+                <div style={{ fontSize:22, fontWeight:900, color:"#0369a1" }}>{fmt(enc.theorique)}</div>
+                {invForm.montantPhysique && (
+                  <div style={{ marginTop:10, padding:"8px 12px", background:Math.abs(ecart)<=ALERT_ECART_INV?"#f0fdf4":"#fef2f2", borderRadius:8 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:ecart===0?"#047857":Math.abs(ecart)>ALERT_ECART_INV?"#dc2626":"#f59e0b" }}>
+                      Écart : {ecart>0?"+":""}{fmt(ecart)}
+                      {ecart===0?" ✅ Conforme":Math.abs(ecart)>ALERT_ECART_INV?" ⚠️ Écart significatif":" ⚠️ Écart mineur"}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <Row>
+            <Field label="Inventaire physique (FCFA)" required half>
+              <Input type="number" value={invForm.montantPhysique} onChange={e=>setInvForm({...invForm,montantPhysique:e.target.value})} placeholder="Valeur comptée physiquement"/>
+            </Field>
+            <Field label="Date" required half><Input type="date" value={invForm.date} onChange={e=>setInvForm({...invForm,date:e.target.value})}/></Field>
+          </Row>
+          <Field label="Responsable du contrôle">
+            <Input value={invForm.responsable} onChange={e=>setInvForm({...invForm,responsable:e.target.value})} placeholder="Nom du contrôleur"/>
+          </Field>
+          <Field label="Note / Observation"><Input value={invForm.note} onChange={e=>setInvForm({...invForm,note:e.target.value})} placeholder="Observations éventuelles..."/></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setInventaireModal(false)}>Annuler</Btn>
+            <Btn variant="success" onClick={addInventaire} disabled={!invForm.depotId||!invForm.montantPhysique}>Valider inventaire</Btn>
+          </div>
+        </Modal>
+      )}
+
       {depotModal && (
-        <Modal title="Créer un nouveau dépôt externe" onClose={()=>setDepotModal(false)}>
+        <Modal title="Créer un nouveau dépôt" onClose={()=>setDepotModal(false)}>
           <Field label="Nom du dépôt" required><Input value={dForm.nom} onChange={e=>setDForm({...dForm,nom:e.target.value})} placeholder="Ex: Dépôt Village"/></Field>
-          <Field label="Localité / Village"><Input value={dForm.localite} onChange={e=>setDForm({...dForm,localite:e.target.value})}/></Field>
+          <Field label="Localité"><Input value={dForm.localite} onChange={e=>setDForm({...dForm,localite:e.target.value})}/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setDepotModal(false)}>Annuler</Btn>
-            <Btn onClick={addDepot} disabled={!dForm.nom}>Créer le dépôt</Btn>
+            <Btn onClick={addDepot} disabled={!dForm.nom}>Créer</Btn>
           </div>
         </Modal>
       )}
@@ -1493,6 +1826,7 @@ function Depots({ data, setRaw, user }) {
     </div>
   );
 }
+
 
 // ─── DÉPENSES ────────────────────────────────────────────────────────────────
 function Depenses({ data, setRaw, user }) {
@@ -2331,7 +2665,8 @@ function useSupabaseData() {
   const fetchAll = async () => {
     try {
       const [users, depots, recettes, clients, recouvrements, encaissementsDivers,
-             versementsBanque, verseDepots, depenses, dotationHistory, responsables, connexions, clotures] = await Promise.all([
+             versementsBanque, verseDepots, depenses, dotationHistory, responsables, connexions, clotures,
+             dotationsDepots, transfertsDepots, inventairesDepots] = await Promise.all([
         supa.get("utilisateurs"),
         supa.get("depots"),
         supa.get("recettes"),
@@ -2345,6 +2680,9 @@ function useSupabaseData() {
         supa.get("responsables").catch(()=>[]),
         supa.get("connexions").catch(()=>[]),
         supa.get("clotures").catch(()=>[]),
+        supa.get("dotations_depots").catch(()=>[]),
+        supa.get("transferts_depots").catch(()=>[]),
+        supa.get("inventaires_depots").catch(()=>[]),
       ]);
       const data = {
         users:               users.map(norm.users),
@@ -2360,6 +2698,9 @@ function useSupabaseData() {
         responsables:        responsables.map(norm.responsables),
         connexions:          connexions.map(norm.connexions),
         clotures:            clotures.map(norm.clotures),
+        dotationsDepots:     dotationsDepots.map(norm.dotationsDepots),
+        transfertsDepots:    transfertsDepots.map(norm.transfertsDepots),
+        inventairesDepots:   inventairesDepots.map(norm.inventairesDepots),
       };
       setRawState(data);
       saveCache(data);
