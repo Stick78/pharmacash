@@ -169,9 +169,8 @@ const norm = {
 // Écrire dans Supabase + mettre à jour le state local immédiatement
 // En cas d'offline : file d'attente locale
 async function dbInsert(table, supaRow, setRaw, raw, localKey, localRow) {
-  // Optimistic update
-  const updated = { ...raw, [localKey]: [localRow, ...raw[localKey]] };
-  setRaw(updated);
+  // Optimistic update immédiat
+  setRaw(prev => ({ ...prev, [localKey]: [localRow, ...(prev[localKey]||[])] }));
   try {
     await supa.insert(table, supaRow);
   } catch {
@@ -180,8 +179,7 @@ async function dbInsert(table, supaRow, setRaw, raw, localKey, localRow) {
 }
 
 async function dbUpdate(table, id, supaRow, setRaw, raw, localKey, updater) {
-  const updated = { ...raw, [localKey]: raw[localKey].map(updater) };
-  setRaw(updated);
+  setRaw(prev => ({ ...prev, [localKey]: (prev[localKey]||[]).map(updater) }));
   try {
     await supa.update(table, id, supaRow);
   } catch {
@@ -190,8 +188,7 @@ async function dbUpdate(table, id, supaRow, setRaw, raw, localKey, updater) {
 }
 
 async function dbDelete(table, id, setRaw, raw, localKey) {
-  const updated = { ...raw, [localKey]: raw[localKey].filter(x=>x.id!==id) };
-  setRaw(updated);
+  setRaw(prev => ({ ...prev, [localKey]: (prev[localKey]||[]).filter(x=>x.id!==id) }));
   try {
     await supa.delete(table, id);
   } catch {
@@ -2401,7 +2398,7 @@ function useSupabaseData() {
     const onOnline = () => flushQueue();
     window.addEventListener("online", onOnline);
     // Rafraîchir automatiquement toutes les 30 secondes
-    const interval = setInterval(() => { if (navigator.onLine) fetchAll(); }, 30000);
+    const interval = setInterval(() => { if (navigator.onLine) fetchAll(); }, 60000);
     return () => {
       window.removeEventListener("online", onOnline);
       clearInterval(interval);
