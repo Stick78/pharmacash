@@ -52,13 +52,100 @@ const pushQueue = (op) => { const q = loadQueue(); q.push(op); saveQueue(q); };
 
 const DOTATION_MONNAIE = 300000; // FCFA
 
+// ─── CONFIG ALERTES ───────────────────────────────────────────────────────────
+const ALERT_EMAIL     = "phcie.bethesda.sangouine@gmail.com";
+const ALERT_SEUIL_CAISSE = 300000;   // FCFA — alerte si solde < ce montant
+const ALERT_DEPOT_JOURS  = 5;        // jours sans versement avant alerte
+const ALERTS_SENT_KEY    = "pharmacash_alerts_sent"; // cache local alertes déjà envoyées
+
+// Charger/sauver les alertes déjà envoyées (évite doublons)
+const loadAlertsSent = () => { try { return JSON.parse(localStorage.getItem(ALERTS_SENT_KEY)) || {}; } catch { return {}; } };
+const markAlertSent  = (key) => { const a = loadAlertsSent(); a[key] = new Date().toISOString(); localStorage.setItem(ALERTS_SENT_KEY, JSON.stringify(a)); };
+const wasAlertSent   = (key) => !!loadAlertsSent()[key];
+
+// Envoi email via Resend (clé API publique)
+async function sendAlertEmail(subject, html) {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Clé Resend à configurer — placeholder pour l'instant
+        "Authorization": "Bearer re_C6v5drjX_NCZH7bKVdQ6bjv6LTPxmDydk",
+      },
+      body: JSON.stringify({
+        from: "PharmaCash Alertes <alertes@pharmacash.app>",
+        to: [ALERT_EMAIL],
+        subject,
+        html,
+      }),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
+// Vérifier et envoyer les alertes nécessaires
+async function checkAndSendAlerts(data, soldes) {
+  const t = today();
+
+  // ── Alerte solde caisse bas ──────────────────────────────────────────────
+  const alertKeyC = `caisse_basse_${t}`;
+  if (soldes.soldeEspeces < ALERT_SEUIL_CAISSE && !wasAlertSent(alertKeyC)) {
+    const ok = await sendAlertEmail(
+      "⚠️ PharmaCash — Solde caisse bas",
+      \`<h2 style="color:#dc2626">⚠️ Alerte Solde Caisse</h2>
+      <p>Le solde de la caisse espèces est descendu sous le seuil minimum.</p>
+      <table style="border-collapse:collapse;width:100%">
+        <tr><td style="padding:8px;background:#fef2f2"><b>Solde actuel</b></td><td style="padding:8px;color:#dc2626;font-size:20px"><b>\${new Intl.NumberFormat('fr-FR').format(Math.round(soldes.soldeEspeces))} FCFA</b></td></tr>
+        <tr><td style="padding:8px;background:#fef2f2"><b>Seuil minimum</b></td><td style="padding:8px">\${new Intl.NumberFormat('fr-FR').format(ALERT_SEUIL_CAISSE)} FCFA</td></tr>
+        <tr><td style="padding:8px;background:#fef2f2"><b>Date</b></td><td style="padding:8px">\${new Date().toLocaleDateString('fr-FR')}</td></tr>
+      </table>
+      <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>\`
+    );
+    if (ok) markAlertSent(alertKeyC);
+  }
+
+  // ── Alertes dépôts sans versement ────────────────────────────────────────
+  for (const depot of (data.depots || [])) {
+    const alertKeyD = \`depot_\${depot.id}_\${t}\`;
+    if (wasAlertSent(alertKeyD)) continue;
+
+    // Dernier versement de ce dépôt
+    const versements = (data.verseDepots || []).filter(v => v.depotId === depot.id);
+    let joursDepuis = ALERT_DEPOT_JOURS + 1; // par défaut > seuil si jamais versé
+    if (versements.length > 0) {
+      const dernierDate = versements.map(v => v.date).sort().reverse()[0];
+      const diff = (new Date(t) - new Date(dernierDate)) / (1000 * 60 * 60 * 24);
+      joursDepuis = Math.floor(diff);
+    }
+
+    if (joursDepuis >= ALERT_DEPOT_JOURS) {
+      const ok = await sendAlertEmail(
+        \`⚠️ PharmaCash — \${depot.nom} : aucun versement depuis \${joursDepuis} jours\`,
+        \`<h2 style="color:#ea580c">⚠️ Alerte Versement Dépôt</h2>
+        <p>Le dépôt suivant n'a pas effectué de versement depuis <b>\${joursDepuis} jour(s)</b>.</p>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:8px;background:#fff7ed"><b>Dépôt</b></td><td style="padding:8px"><b>\${depot.nom}</b> (\${depot.localite})</td></tr>
+          <tr><td style="padding:8px;background:#fff7ed"><b>Derniers versements</b></td><td style="padding:8px">\${versements.length === 0 ? "Aucun versement enregistré" : "Dernier : " + new Date(versements.map(v=>v.date).sort().reverse()[0]).toLocaleDateString('fr-FR')}</td></tr>
+          <tr><td style="padding:8px;background:#fff7ed"><b>Jours écoulés</b></td><td style="padding:8px;color:#dc2626"><b>\${joursDepuis} jour(s)</b></td></tr>
+          <tr><td style="padding:8px;background:#fff7ed"><b>Date vérification</b></td><td style="padding:8px">\${new Date().toLocaleDateString('fr-FR')}</td></tr>
+        </table>
+        <p style="margin-top:16px;color:#6b7280">Ceci est une alerte automatique de PharmaCash.</p>\`
+      );
+      if (ok) markAlertSent(alertKeyD);
+    }
+  }
+}
+
 // Structure vide — données chargées depuis Supabase
 const EMPTY_DATA = {
   users: [], depots: [], recettes: [], clients: [],
   recouvrements: [], encaissementsDivers: [],
   versementsBanque: [], verseDepots: [],
   depenses: [], dotationHistory: [],
-  responsables: [], // { id, nom, depot_id, telephone }
+  responsables: [],
+  connexions: [], // { id, user_id, user_name, role, date, heure, navigateur }
+  clotures: [], // { id, date, tranche, caissiere, montantTheorique, montantPhysique, ecart, note }
 };
 
 // Normalisation snake_case → camelCase depuis Supabase
@@ -74,6 +161,8 @@ const norm = {
   depenses: (r) => ({ id:r.id, date:r.date, categorie:r.categorie, libelle:r.libelle, montant:Number(r.montant), mode:r.mode, note:r.note||"" }),
   dotationHistory: (r) => ({ id:r.id, date:r.date, dest:r.dest, montant:Number(r.montant), note:r.note||"" }),
   responsables: (r) => ({ id:r.id, nom:r.nom, depotId:r.depot_id||null, telephone:r.telephone||"" }),
+  connexions: (r) => ({ id:r.id, userId:r.user_id, userName:r.user_name, role:r.role, date:r.date, heure:r.heure, navigateur:r.navigateur||"" }),
+  clotures: (r) => ({ id:r.id, date:r.date, tranche:r.tranche, caissiere:r.caissiere||'', montantTheorique:Number(r.montant_theorique||0), montantPhysique:Number(r.montant_physique||0), ecart:Number(r.ecart||0), note:r.note||'' }),
 };
 
 // ─── OPÉRATIONS DB ───────────────────────────────────────────────────────────
@@ -111,10 +200,10 @@ async function dbDelete(table, id, setRaw, raw, localKey) {
 }
 
 const ROLES = {
-  admin:      { label: "Administrateur", color: "#7c3aed", modules: ["dashboard","recettes","recouvrement","versements","depots","depenses","historique","utilisateurs"] },
-  gerant:     { label: "Gérant",         color: "#0369a1", modules: ["dashboard","recettes","recouvrement","versements","depots","depenses","historique"] },
-  comptable:  { label: "Comptable",      color: "#047857", modules: ["dashboard","versements","depots","depenses","historique"] },
-  caissier:   { label: "Caissier",       color: "#b45309", modules: ["recettes","recouvrement"] },
+  admin:      { label: "Administrateur", color: "#7c3aed", modules: ["dashboard","recettes","recouvrement","versements","depots","depenses","cloture","historique","connexions","utilisateurs"] },
+  gerant:     { label: "Gérant",         color: "#0369a1", modules: ["gerant_dashboard","recettes","recouvrement","versements","depots","depenses","historique"] },
+  comptable:  { label: "Comptable",      color: "#047857", modules: ["dashboard","versements","depots","depenses","cloture","historique"] },
+  caissier:   { label: "Caissier",       color: "#b45309", modules: ["recettes","recouvrement","cloture"] },
 };
 
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -253,6 +342,17 @@ const Table = ({ cols, rows, empty="Aucune donnée" }) => (
   </div>
 );
 
+// Boutons modifier/supprimer pour admin
+const EditDeleteBtns = ({ onEdit, onDelete, isAdmin }) => {
+  if (!isAdmin) return null;
+  return (
+    <div style={{ display:"flex", gap:4 }}>
+      {onEdit && <button onClick={onEdit} style={{ background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:12, color:"#1d4ed8" }}>✏️</button>}
+      {onDelete && <button onClick={onDelete} style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:12, color:"#dc2626" }}>🗑️</button>}
+    </div>
+  );
+};
+
 const Divider = ({ label }) => (
   <div style={{ display:"flex", alignItems:"center", gap:10, margin:"20px 0 14px" }}>
     <div style={{ flex:1, height:1, background:"#e5e7eb" }}/>
@@ -324,6 +424,15 @@ function LoginPage({ onLogin, users, refetch }) {
       let u = users.find(x=>x.email===email && x.password===pwd);
       if (!u) { setErr("Email ou mot de passe incorrect"); setLoading(false); return; }
       await refetch();
+      // Enregistrer la connexion
+      try {
+        const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+        const d = new Date();
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const heureStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        const nav = navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop";
+        await supa.insert("connexions", { id, user_id:u.id, user_name:u.name, role:u.role, date:dateStr, heure:heureStr, navigateur:nav });
+      } catch {}
       onLogin(u);
     } catch { setErr("Erreur de connexion"); } finally { setLoading(false); }
   };
@@ -400,6 +509,37 @@ function Dashboard({ data }) {
   return (
     <div>
       <h2 style={{ margin:"0 0 6px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Tableau de bord</h2>
+
+      {/* ── ALERTES VISUELLES ── */}
+      {(() => {
+        const alertes = [];
+        // Solde caisse bas
+        if (soldes.soldeEspeces < ALERT_SEUIL_CAISSE) {
+          alertes.push({ type:"danger", msg:`⚠️ Solde caisse espèces bas : ${fmt(soldes.soldeEspeces)} — seuil minimum ${fmt(ALERT_SEUIL_CAISSE)}` });
+        }
+        // Dépôts sans versement depuis X jours
+        (data.depots||[]).forEach(dep => {
+          const versements = (data.verseDepots||[]).filter(v=>v.depotId===dep.id);
+          let jours = ALERT_DEPOT_JOURS + 1;
+          if (versements.length > 0) {
+            const dernier = versements.map(v=>v.date).sort().reverse()[0];
+            jours = Math.floor((new Date(today()) - new Date(dernier)) / (1000*60*60*24));
+          }
+          if (jours >= ALERT_DEPOT_JOURS) {
+            alertes.push({ type:"warn", msg:`📍 ${dep.nom} : aucun versement depuis ${jours} jour(s)` });
+          }
+        });
+        if (!alertes.length) return null;
+        return (
+          <div style={{ marginBottom:16 }}>
+            {alertes.map((a,i) => (
+              <div key={i} style={{ background:a.type==="danger"?"#fef2f2":"#fff7ed", border:`1px solid ${a.type==="danger"?"#fca5a5":"#fed7aa"}`, borderRadius:10, padding:"10px 16px", marginBottom:8, display:"flex", gap:10, alignItems:"center" }}>
+                <span style={{ color:a.type==="danger"?"#dc2626":"#ea580c", fontWeight:700, fontSize:13 }}>{a.msg}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <p style={{ margin:"0 0 20px", color:"#6b7280", fontSize:14 }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
 
 
@@ -1520,6 +1660,198 @@ function Utilisateurs({ data, setRaw, currentUser }) {
 }
 
 
+
+// ─── CLÔTURE DE CAISSE ───────────────────────────────────────────────────────
+function ClotureCaisse({ data, setRaw, user }) {
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ date:today(), tranche:"jour", caissiere:"", montantPhysique:"", note:"" });
+
+  const caissiers = [...new Set([
+    ...data.users.filter(u=>u.role==="caissier"||u.role==="admin").map(u=>u.name),
+    ...(data.responsables||[]).map(r=>r.nom),
+  ])];
+
+  // Calcul montant théorique de la tranche
+  const calcTheorique = (date, tranche) => {
+    return data.recettes
+      .filter(r=>r.date===date&&r.source==="pharmacie"&&r.tranche===tranche)
+      .reduce((s,r)=>s+Number(r.montant||0),0);
+  };
+
+  const add = async () => {
+    if (!form.montantPhysique) return;
+    const theorique = calcTheorique(form.date, form.tranche);
+    const physique  = Number(form.montantPhysique);
+    const ecart     = physique - theorique;
+    const id = uid();
+    const localRow = { id, date:form.date, tranche:form.tranche, caissiere:form.caissiere, montantTheorique:theorique, montantPhysique:physique, ecart, note:form.note||"" };
+    const supaRow  = { id, date:form.date, tranche:form.tranche, caissiere:form.caissiere||null, montant_theorique:theorique, montant_physique:physique, ecart, note:form.note||null };
+    await dbInsert("clotures", supaRow, setRaw, data, "clotures", localRow);
+    setModal(false); setForm({ date:today(), tranche:"jour", caissiere:"", montantPhysique:"", note:"" });
+  };
+
+  const theorique = calcTheorique(form.date, form.tranche);
+  const physique  = Number(form.montantPhysique||0);
+  const ecart     = physique - theorique;
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <h2 style={{ margin:0, fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Clôture de caisse</h2>
+        <Btn onClick={()=>setModal(true)}><span style={{ display:"flex", alignItems:"center", gap:6 }}><Icon name="plus" size={15}/>Nouvelle clôture</span></Btn>
+      </div>
+
+      <Table
+        cols={["Date","Tranche","Caissière","Montant théorique","Montant physique","Écart","Statut","Note"]}
+        rows={[...(data.clotures||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(c=>{
+          const ok = Math.abs(c.ecart) < 100;
+          return [
+            fmtDate(c.date),
+            c.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>,
+            c.caissiere||"—",
+            fmt(c.montantTheorique),
+            fmt(c.montantPhysique),
+            <b style={{color:c.ecart===0?"#047857":c.ecart>0?"#0369a1":"#dc2626"}}>{c.ecart>0?"+":""}{fmt(c.ecart)}</b>,
+            <Badge color={ok?"#047857":"#dc2626"}>{ok?"✅ Conforme":"⚠️ Écart"}</Badge>,
+            c.note||"—",
+          ];
+        })}
+        empty="Aucune clôture enregistrée"
+      />
+
+      {modal && (
+        <Modal title="Clôture de caisse" onClose={()=>setModal(false)}>
+          <Row>
+            <Field label="Date" required half><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
+            <Field label="Tranche" required half>
+              <Select value={form.tranche} onChange={e=>setForm({...form,tranche:e.target.value})}>
+                <option value="jour">☀️ Jour (7h30–17h30)</option>
+                <option value="nuit">🌙 Nuit (17h30–7h30)</option>
+              </Select>
+            </Field>
+          </Row>
+          <Field label="Caissière responsable">
+            <Input list="cl-caissieres" value={form.caissiere} onChange={e=>setForm({...form,caissiere:e.target.value})} placeholder="Nom de la caissière"/>
+            <datalist id="cl-caissieres">{caissiers.map(c=><option key={c} value={c}/>)}</datalist>
+          </Field>
+          <div style={{ background:"#f0f9ff", borderRadius:10, padding:"14px 16px", marginBottom:14 }}>
+            <div style={{ fontSize:12, color:"#0369a1", fontWeight:700, marginBottom:6 }}>MONTANT THÉORIQUE (calculé)</div>
+            <div style={{ fontSize:22, fontWeight:900, color:"#0369a1" }}>{fmt(calcTheorique(form.date, form.tranche))}</div>
+            <div style={{ fontSize:12, color:"#6b7280", marginTop:4 }}>Somme des recettes espèces enregistrées pour cette tranche</div>
+          </div>
+          <Field label="Montant physique compté (FCFA)" required>
+            <Input type="number" value={form.montantPhysique} onChange={e=>setForm({...form,montantPhysique:e.target.value})} placeholder="Montant réellement compté en caisse"/>
+          </Field>
+          {form.montantPhysique && (
+            <div style={{ background:ecart===0?"#f0fdf4":ecart>0?"#eff6ff":"#fef2f2", borderRadius:8, padding:"10px 14px", marginBottom:14 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:ecart===0?"#047857":ecart>0?"#0369a1":"#dc2626" }}>
+                Écart : {ecart>0?"+":""}{fmt(ecart)}
+                {ecart===0?" ✅ Conforme":ecart>0?" ➕ Excédent":" ➖ Déficit"}
+              </div>
+            </div>
+          )}
+          <Field label="Note"><Input value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Observation éventuelle"/></Field>
+          <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={()=>setModal(false)}>Annuler</Btn>
+            <Btn variant="success" onClick={add} disabled={!form.montantPhysique}>Clôturer</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── VUE GÉRANT SIMPLIFIÉE ───────────────────────────────────────────────────
+function GerantDashboard({ data }) {
+  const soldes = calcSoldes(data);
+  const recToday = data.recettes.filter(r=>r.date===today()).reduce((s,r)=>s+Number(r.montant||0),0);
+  const recEspToday = data.recettes.filter(r=>r.date===today()&&isEspeces(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
+  const recMobToday = data.recettes.filter(r=>r.date===today()&&isMobileMoney(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
+  const depToday = data.depenses.filter(d=>d.date===today()).reduce((s,d)=>s+Number(d.montant||0),0);
+  const versBankToday = data.versementsBanque.filter(v=>v.date===today()).reduce((s,v)=>s+Number(v.montant||0),0);
+  const recouvrToday = data.recouvrements.filter(r=>r.date===today()).reduce((s,r)=>s+Number(r.montant||0),0);
+
+  // Alertes dépôts
+  const depotsAlerte = (data.depots||[]).filter(dep => {
+    const vers = (data.verseDepots||[]).filter(v=>v.depotId===dep.id);
+    if (!vers.length) return true;
+    const dernier = vers.map(v=>v.date).sort().reverse()[0];
+    const jours = Math.floor((new Date(today())-new Date(dernier))/(1000*60*60*24));
+    return jours >= ALERT_DEPOT_JOURS;
+  });
+
+  return (
+    <div>
+      <h2 style={{ margin:"0 0 4px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Vue Gérant</h2>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:20 }}>
+        <p style={{ margin:0, fontSize:13, color:"#6b7280" }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+        <div style={{ display:"flex", gap:8 }}>
+          <Btn variant="ghost" style={{ fontSize:13 }} onClick={()=>generatePDF(data,"jour")}>📄 PDF Journalier</Btn>
+          <Btn variant="ghost" style={{ fontSize:13 }} onClick={()=>generatePDF(data,"mois")}>📄 PDF Mensuel</Btn>
+        </div>
+      </div>
+
+      {depotsAlerte.length>0 && (
+        <div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+          <div style={{ fontWeight:700, color:"#ea580c", marginBottom:6 }}>⚠️ {depotsAlerte.length} dépôt(s) sans versement depuis {ALERT_DEPOT_JOURS}+ jours</div>
+          {depotsAlerte.map(d=><div key={d.id} style={{ fontSize:13, color:"#9a3412" }}>• {d.nom}</div>)}
+        </div>
+      )}
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:20 }}>
+        {[
+          { label:"CA du jour", value:fmt(recToday), color:"#047857", sub:`💵 ${fmt(recEspToday)} + 📱 ${fmt(recMobToday)}` },
+          { label:"Dépenses du jour", value:fmt(depToday), color:"#dc2626", sub:"Toutes catégories" },
+          { label:"Versé en banque", value:fmt(versBankToday), color:"#0891b2", sub:"Aujourd'hui" },
+          { label:"Recouvrement", value:fmt(recouvrToday), color:"#b45309", sub:"Aujourd'hui" },
+          { label:"💵 Solde caisse", value:fmt(soldes.soldeEspeces), color:soldes.soldeEspeces<ALERT_SEUIL_CAISSE?"#dc2626":"#047857", sub:soldes.soldeEspeces<ALERT_SEUIL_CAISSE?"⚠️ En dessous du seuil":"✅ Normal" },
+          { label:"📱 Total Mobile Money", value:fmt(soldes.totalMobile), color:"#7c3aed", sub:"Tous opérateurs" },
+        ].map((k,i)=>(
+          <div key={i} style={{ background:"#fff", borderRadius:12, padding:"16px 18px", boxShadow:"0 1px 6px #0001", borderLeft:`4px solid ${k.color}` }}>
+            <div style={{ fontSize:11, color:"#6b7280", fontWeight:700, textTransform:"uppercase", marginBottom:4 }}>{k.label}</div>
+            <div style={{ fontSize:20, fontWeight:900, color:k.color }}>{k.value}</div>
+            <div style={{ fontSize:11, color:"#9ca3af", marginTop:3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Mobile money par opérateur */}
+      <div style={{ background:"#fff", borderRadius:12, padding:"18px 20px", boxShadow:"0 1px 4px #0001" }}>
+        <div style={{ fontSize:13, fontWeight:700, color:"#374151", marginBottom:12 }}>📱 Détail Mobile Money</div>
+        {MODES_MOBILE.map(op=>{
+          const s = soldes.soldeMobile[op.value];
+          return (
+            <div key={op.value} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #f0f0f0" }}>
+              <span style={{ color:op.color, fontWeight:600 }}>{op.label}</span>
+              <b style={{ color:op.color }}>{fmt(s.solde)}</b>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── HISTORIQUE CONNEXIONS ───────────────────────────────────────────────────
+function ConnexionsPage({ data }) {
+  return (
+    <div>
+      <h2 style={{ margin:"0 0 20px", fontSize:20, fontWeight:900, color:"#0c4a6e" }}>Historique des connexions</h2>
+      <Table
+        cols={["Date","Heure","Utilisateur","Rôle","Appareil"]}
+        rows={[...(data.connexions||[])].sort((a,b)=>b.date.localeCompare(a.date)||b.heure.localeCompare(a.heure)).map(c=>[
+          fmtDate(c.date),
+          c.heure,
+          <b>{c.userName}</b>,
+          <Badge color={ROLES[c.role]?.color||"#6b7280"}>{ROLES[c.role]?.label||c.role}</Badge>,
+          c.navigateur==="Mobile"?"📱 Mobile":"🖥️ Desktop",
+        ])}
+        empty="Aucune connexion enregistrée"
+      />
+    </div>
+  );
+}
+
 // ─── HISTORIQUE ──────────────────────────────────────────────────────────────
 function Historique({ data }) {
   const [onglet, setOnglet] = useState("recettes");
@@ -1793,16 +2125,114 @@ function Historique({ data }) {
   );
 }
 
+// ─── GÉNÉRATION PDF ──────────────────────────────────────────────────────────
+function generatePDF(data, type = "jour") {
+  const soldes = calcSoldes(data);
+  const isJour = type === "jour";
+  const dateLabel = isJour
+    ? new Date().toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long", year:"numeric" })
+    : new Date().toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+
+  const fmtN = (n) => new Intl.NumberFormat("fr-FR").format(Math.round(n||0)) + " FCFA";
+  const filterFn = isJour
+    ? (r) => r.date === today()
+    : (r) => { const [ry,rm] = r.date.split("-"); const d=new Date(); return parseInt(rm)-1===d.getMonth()&&parseInt(ry)===d.getFullYear(); };
+
+  const recettes = data.recettes.filter(filterFn);
+  const depenses = data.depenses.filter(d=>filterFn(d));
+  const versements = data.versementsBanque.filter(v=>filterFn(v));
+  const totRec = recettes.reduce((s,r)=>s+Number(r.montant||0),0);
+  const totDep = depenses.reduce((s,d)=>s+Number(d.montant||0),0);
+  const totVers = versements.reduce((s,v)=>s+Number(v.montant||0),0);
+
+  const rows = (arr, cols) => arr.map(r => `<tr>${cols.map(c=>`<td style="padding:6px 10px;border-bottom:1px solid #e5e7eb">${c(r)}</td>`).join("")}</tr>`).join("");
+
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+  <title>PharmaCash — Rapport ${isJour?"Journalier":"Mensuel"}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 20px; font-size: 13px; }
+    h1 { color: #0c4a6e; margin-bottom: 4px; }
+    h2 { color: #0369a1; font-size: 15px; margin: 20px 0 8px; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th { background: #f8fafc; padding: 8px 10px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
+    .kpi { display: inline-block; background: #f8fafc; border-left: 4px solid #0369a1; padding: 10px 16px; margin: 6px 8px 6px 0; border-radius: 4px; min-width: 150px; }
+    .kpi-label { font-size: 11px; color: #6b7280; font-weight: 700; text-transform: uppercase; }
+    .kpi-value { font-size: 18px; font-weight: 900; color: #0c4a6e; margin-top: 2px; }
+    .total { background: #f0fdf4; font-weight: 700; }
+    .footer { margin-top: 30px; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+    @media print { body { padding: 0; } }
+  </style></head><body>
+  <h1>💊 PharmaCash — Rapport ${isJour?"Journalier":"Mensuel"}</h1>
+  <p style="color:#6b7280;margin:0 0 16px">${dateLabel} · Généré le ${new Date().toLocaleString("fr-FR")}</p>
+
+  <div>
+    <div class="kpi"><div class="kpi-label">Total Recettes</div><div class="kpi-value" style="color:#047857">${fmtN(totRec)}</div></div>
+    <div class="kpi"><div class="kpi-label">💵 Espèces</div><div class="kpi-value" style="color:#0369a1">${fmtN(recettes.filter(r=>r.mode==="especes").reduce((s,r)=>s+Number(r.montant||0),0))}</div></div>
+    <div class="kpi"><div class="kpi-label">📱 Mobile Money</div><div class="kpi-value" style="color:#7c3aed">${fmtN(recettes.filter(r=>MOBILE_MONEY_IDS.includes(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0))}</div></div>
+    <div class="kpi"><div class="kpi-label">Dépenses</div><div class="kpi-value" style="color:#dc2626">${fmtN(totDep)}</div></div>
+    <div class="kpi"><div class="kpi-label">Versements banque</div><div class="kpi-value" style="color:#0891b2">${fmtN(totVers)}</div></div>
+    <div class="kpi"><div class="kpi-label">Solde Caisse</div><div class="kpi-value" style="color:${soldes.soldeEspeces>=0?"#047857":"#dc2626"}">${fmtN(soldes.soldeEspeces)}</div></div>
+  </div>
+
+  <h2>Recettes par point de vente</h2>
+  <table><thead><tr><th>Source</th><th>💵 Espèces</th><th>📱 Mobile</th><th>Total</th></tr></thead><tbody>
+  ${[{label:"🏥 Pharmacie centrale", id:"pharmacie"}, ...data.depots.map(d=>({label:"📍 "+d.nom, id:d.id}))].map(src=>{
+    const esp = recettes.filter(r=>r.source===src.id&&r.mode==="especes").reduce((s,r)=>s+Number(r.montant||0),0);
+    const mob = recettes.filter(r=>r.source===src.id&&MOBILE_MONEY_IDS.includes(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
+    return \`<tr><td>\${src.label}</td><td>\${fmtN(esp)}</td><td>\${fmtN(mob)}</td><td><b>\${fmtN(esp+mob)}</b></td></tr>\`;
+  }).join("")}
+  <tr class="total"><td>TOTAL</td><td>${fmtN(recettes.filter(r=>r.mode==="especes").reduce((s,r)=>s+Number(r.montant||0),0))}</td><td>${fmtN(recettes.filter(r=>MOBILE_MONEY_IDS.includes(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0))}</td><td>${fmtN(totRec)}</td></tr>
+  </tbody></table>
+
+  <h2>Détail des recettes</h2>
+  <table><thead><tr><th>Date</th><th>Source</th><th>Caissière</th><th>Mode</th><th>Montant</th></tr></thead><tbody>
+  ${rows(recettes, [
+    r=>r.date,
+    r=>r.source==="pharmacie"?"Centrale":(data.depots.find(d=>d.id===r.source)?.nom||"Dépôt"),
+    r=>r.caissiere||"—",
+    r=>MODES.find(m=>m.value===r.mode)?.label||r.mode,
+    r=>"<b>"+fmtN(r.montant)+"</b>",
+  ])}
+  </tbody></table>
+
+  <h2>Dépenses</h2>
+  <table><thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Mode</th><th>Montant</th></tr></thead><tbody>
+  ${rows(depenses, [d=>d.date, d=>d.categorie, d=>d.libelle, d=>d.mode, d=>"<b style='color:#dc2626'>"+fmtN(d.montant)+"</b>"])}
+  <tr class="total"><td colspan="4">TOTAL DÉPENSES</td><td>${fmtN(totDep)}</td></tr>
+  </tbody></table>
+
+  <h2>Versements banque</h2>
+  <table><thead><tr><th>Date</th><th>Banque</th><th>Type</th><th>Montant</th></tr></thead><tbody>
+  ${rows(versements, [v=>v.date, v=>v.banque||"—", v=>v.typeVers||"especes", v=>"<b style='color:#0891b2'>"+fmtN(v.montant)+"</b>"])}
+  <tr class="total"><td colspan="3">TOTAL VERSEMENTS</td><td>${fmtN(totVers)}</td></tr>
+  </tbody></table>
+
+  <div class="footer">PharmaCash · Rapport généré automatiquement · ${new Date().toLocaleString("fr-FR")}</div>
+  </body></html>`;
+
+  const win = window.open("", "_blank");
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 500);
+  }
+}
+
 // ─── APP SHELL ───────────────────────────────────────────────────────────────
 const NAV = [
-  { key:"dashboard",    label:"Tableau de bord",  icon:"dashboard"    },
-  { key:"recettes",     label:"Recettes",          icon:"recettes"     },
-  { key:"recouvrement", label:"Recouvrement",      icon:"recouvrement" },
-  { key:"versements",   label:"Versements banque", icon:"versements"   },
-  { key:"depots",       label:"Dépôts externes",   icon:"depots"       },
-  { key:"depenses",     label:"Dépenses",          icon:"depenses"     },
-  { key:"historique",   label:"Historique",        icon:"factures"     },
-  { key:"utilisateurs", label:"Utilisateurs",      icon:"utilisateurs" },
+  { key:"dashboard",       label:"Tableau de bord",    icon:"dashboard"    },
+  { key:"gerant_dashboard",label:"Vue Gérant",          icon:"dashboard"    },
+  { key:"recettes",        label:"Recettes",            icon:"recettes"     },
+  { key:"recouvrement",    label:"Recouvrement",        icon:"recouvrement" },
+  { key:"versements",      label:"Versements banque",   icon:"versements"   },
+  { key:"depots",          label:"Dépôts externes",     icon:"depots"       },
+  { key:"depenses",        label:"Dépenses",            icon:"depenses"     },
+  { key:"cloture",         label:"Clôture caisse",      icon:"check"        },
+  { key:"historique",      label:"Historique",          icon:"factures"     },
+  { key:"connexions",      label:"Connexions",          icon:"utilisateurs" },
+  { key:"utilisateurs",    label:"Utilisateurs",        icon:"utilisateurs" },
 ];
 
 // ─── PWA SERVICE WORKER REGISTRATION ────────────────────────────────────────
@@ -1821,7 +2251,7 @@ function useSupabaseData() {
   const fetchAll = async () => {
     try {
       const [users, depots, recettes, clients, recouvrements, encaissementsDivers,
-             versementsBanque, verseDepots, depenses, dotationHistory, responsables] = await Promise.all([
+             versementsBanque, verseDepots, depenses, dotationHistory, responsables, connexions, clotures] = await Promise.all([
         supa.get("utilisateurs"),
         supa.get("depots"),
         supa.get("recettes"),
@@ -1833,6 +2263,8 @@ function useSupabaseData() {
         supa.get("depenses"),
         supa.get("dotation_history"),
         supa.get("responsables").catch(()=>[]),
+        supa.get("connexions").catch(()=>[]),
+        supa.get("clotures").catch(()=>[]),
       ]);
       const data = {
         users:               users.map(norm.users),
@@ -1846,9 +2278,14 @@ function useSupabaseData() {
         depenses:            depenses.map(norm.depenses),
         dotationHistory:     dotationHistory.map(norm.dotationHistory),
         responsables:        responsables.map(norm.responsables),
+        connexions:          connexions.map(norm.connexions),
+        clotures:            clotures.map(norm.clotures),
       };
       setRawState(data);
       saveCache(data);
+      // Vérifier alertes après chargement
+      const s = calcSoldes(data);
+      checkAndSendAlerts(data, s).catch(()=>{});
       return data;
     } catch (e) {
       console.warn("Supabase hors ligne, cache utilisé", e);
@@ -1953,7 +2390,10 @@ export default function App() {
       case "versements":   return <Versements data={raw} setRaw={setRaw} user={user}/>;
       case "depots":       return <Depots data={raw} setRaw={setRaw} user={user}/>;
       case "depenses":     return <Depenses data={raw} setRaw={setRaw} user={user}/>;
-      case "historique":   return <Historique data={raw}/>;
+      case "historique":        return <Historique data={raw}/>;
+      case "gerant_dashboard":  return <GerantDashboard data={raw}/>;
+      case "cloture":           return <ClotureCaisse data={raw} setRaw={setRaw} user={user}/>;
+      case "connexions":        return <ConnexionsPage data={raw}/>;
       case "utilisateurs": return <Utilisateurs data={raw} setRaw={setRaw} currentUser={user}/>;
       default: return null;
     }
