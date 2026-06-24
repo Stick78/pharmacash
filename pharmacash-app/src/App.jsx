@@ -320,7 +320,7 @@ const Badge = ({ children, color="#6b7280" }) => (
 );
 
 const KpiCard = ({ label, value, sub, color="#0369a1", icon, highlight }) => (
-  <div className="kpi-card" style={{ background:highlight||"#fff", borderRadius:12, padding:"18px 20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", borderLeft:`5px solid ${color}`, display:"flex", flexDirection:"column", gap:6, cursor:"default" }}>
+  <div className="kpi-card" style={{ background:highlight||"#fff", borderRadius:12, padding:"18px 20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", borderLeft:`5px solid ${color}`, display:"flex", flexDirection:"column", gap:6 }}>
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
       <span style={{ fontSize:11, color: highlight?"#fff":"#6b7280", fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>{label}</span>
       <span style={{ color, opacity:0.8 }}><Icon name={icon||"dashboard"} size={20}/></span>
@@ -332,7 +332,7 @@ const KpiCard = ({ label, value, sub, color="#0369a1", icon, highlight }) => (
 
 const Modal = ({ title, onClose, children, wide }) => (
   <div style={{ position:"fixed", inset:0, background:"#0007", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-    <div style={{ background:"#fff", borderRadius:16, width:"100%", maxWidth:wide?680:520, maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 80px #0004" }}>
+    <div style={{ background:"#fff", borderRadius:16, width:"100%", maxWidth:wide?680:520, maxHeight:"92vh", overflowY:"auto", boxShadow:"0 24px 80px #0004", animation:"fadeIn 0.2s ease" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 24px 16px", borderBottom:"2px solid #d1fae5", position:"sticky", top:0, background:"#fff", zIndex:1 }}>
         <h3 style={{ margin:0, fontSize:17, fontWeight:700 }}>{title}</h3>
         <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"#6b7280" }}><Icon name="close"/></button>
@@ -1616,7 +1616,7 @@ function Depots({ data, setRaw, user }) {
           const alert = enc.theorique > ALERT_ENCOURS_MAX;
           const invRetard = enc.joursDepuisInv >= ALERT_INV_JOURS;
           return (
-            <div key={dep.id} style={{ background:"#fff", borderRadius:14, padding:18, boxShadow:"0 1px 6px #0001", borderTop:`3px solid ${alert?"#dc2626":"#7c3aed"}` }}>
+            <div key={dep.id} className="depot-card" style={{ background:"#fff", borderRadius:14, padding:18, boxShadow:"0 1px 6px #0001", borderTop:`3px solid ${alert?"#dc2626":"#7c3aed"}` }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
                 <div>
                   <div style={{ fontWeight:800, fontSize:15 }}>📍 {dep.nom}</div>
@@ -2955,7 +2955,7 @@ export default function App() {
 
       <nav style={{ flex:1, overflowY:"auto", padding:"6px 0" }}>
         {nav.map(n=>(
-          <button key={n.key} onClick={()=>{ setPage(n.key); setSideOpen(false); }} style={{
+          <button key={n.key} onClick={()=>{ setPage(n.key); setSideOpen(false); }} className="nav-btn" style={{
             display:"flex", alignItems:"center", gap:12, width:"100%", padding:"10px 20px",
             background:page===n.key?"rgba(255,255,255,0.15)":"none", border:"none", cursor:"pointer",
             color:page===n.key?"#fff":"#a7f3d0", transition:"all 0.2s", fontSize:14, fontWeight:page===n.key?700:400,
@@ -2981,9 +2981,46 @@ export default function App() {
         @media(max-width:720px){ .ds{display:none!important} }
         @media(min-width:721px){ .mb{display:none!important} }
         * { box-sizing:border-box; }
+        body { background:#f0fdf4; font-family:'Inter','Segoe UI',sans-serif; }
         input,select,textarea { font-family:inherit; }
-        button { font-family:inherit; }
-        ::-webkit-scrollbar{ width:5px; } ::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:4px; }
+
+        /* ── Boutons ── */
+        button { font-family:inherit; transition:all 0.18s ease; }
+        button:hover:not(:disabled) { transform:translateY(-1px); filter:brightness(1.08); box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+        button:active:not(:disabled) { transform:translateY(0px); filter:brightness(0.97); }
+
+        /* ── Navigation sidebar ── */
+        .nav-btn { transition:all 0.2s ease !important; }
+        .nav-btn:hover { background:rgba(255,255,255,0.18) !important; padding-left:26px !important; }
+
+        /* ── Cartes KPI ── */
+        .kpi-card { transition:all 0.2s ease; cursor:default; }
+        .kpi-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.1) !important; }
+
+        /* ── Cartes dépôts ── */
+        .depot-card { transition:all 0.2s ease; }
+        .depot-card:hover { transform:translateY(-3px); box-shadow:0 8px 24px rgba(0,0,0,0.12) !important; }
+
+        /* ── Lignes tableau ── */
+        tbody tr { transition:background 0.15s; }
+        tbody tr:hover td { background:#ecfdf5 !important; }
+
+        /* ── Inputs focus ── */
+        input:focus, select:focus, textarea:focus {
+          border-color:#047857 !important;
+          box-shadow:0 0 0 3px rgba(4,120,87,0.12);
+          outline:none;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width:5px; }
+        ::-webkit-scrollbar-track { background:#f0fdf4; }
+        ::-webkit-scrollbar-thumb { background:#6ee7b7; border-radius:4px; }
+        ::-webkit-scrollbar-thumb:hover { background:#047857; }
+
+        /* ── Modales ── */
+        @keyframes fadeIn { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
+        @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
 
       {/* Desktop */}
