@@ -2403,13 +2403,17 @@ function Historique({ data }) {
   });
 
   // ── RECETTES ──
+  const [sourceFilter, setSourceFilter] = useState("all");
   const recettes = data.recettes
-    .filter(r => inPeriod(r.date) && (
-      !search ||
-      (data.depots.find(d=>d.id===r.source)?.nom||"centrale").toLowerCase().includes(search.toLowerCase()) ||
-      (r.caissiere||"").toLowerCase().includes(search.toLowerCase()) ||
-      modeLabel(r.mode).toLowerCase().includes(search.toLowerCase())
-    ))
+    .filter(r => inPeriod(r.date) &&
+      (sourceFilter === "all" || (sourceFilter === "pharmacie" ? r.source === "pharmacie" : r.source === sourceFilter)) &&
+      (!search ||
+        (r.source==="pharmacie" ? "centrale" : (data.depots.find(d=>d.id===r.source)?.nom||"dépôt")).toLowerCase().includes(search.toLowerCase()) ||
+        (r.caissiere||"").toLowerCase().includes(search.toLowerCase()) ||
+        modeLabel(r.mode).toLowerCase().includes(search.toLowerCase()) ||
+        String(r.montant).includes(search)
+      )
+    )
     .sort((a,b) => {
       let va = a[sortCol], vb = b[sortCol];
       if (sortCol==="montant") { va=Number(va); vb=Number(vb); }
@@ -2498,6 +2502,15 @@ function Historique({ data }) {
       {/* ── RECETTES ── */}
       {onglet==="recettes" && (
         <div>
+          {/* Filtre par source */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 }}>
+            <Select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)} style={{ width:"auto", fontSize:13 }}>
+              <option value="all">🏪 Tous les points de vente</option>
+              <option value="pharmacie">🏥 Pharmacie centrale</option>
+              {(data.depots||[]).map(d=><option key={d.id} value={d.id}>📍 {d.nom}</option>)}
+            </Select>
+          </div>
+
           <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap" }}>
             <div style={{ background:"#f0f9ff", borderRadius:8, padding:"8px 14px", fontSize:13 }}>
               💵 Espèces : <b style={{color:"#0369a1"}}>{fmt(totRecEsp)}</b>
