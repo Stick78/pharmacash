@@ -7,7 +7,7 @@ const SUPA_KEY = "sb_publishable_liQ3XVA1Z9f6vW4QqiAOgQ_hIWNSonX";
 const supa = {
   async get(table, filters = {}) {
     let url = `${SUPA_URL}/rest/v1/${table}?select=*&order=created_at.desc`;
-    Object.entries(filters).forEach(([k, v]) = > { url += `&${k}=eq.${v}`; });
+    Object.entries(filters).forEach(([k, v]) => { url += `&${k}=eq.${v}`; });
     const r = await fetch(url, { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
