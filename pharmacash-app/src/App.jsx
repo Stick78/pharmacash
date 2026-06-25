@@ -7,7 +7,7 @@ const SUPA_KEY = "sb_publishable_liQ3XVA1Z9f6vW4QqiAOgQ_hIWNSonX";
 const supa = {
   async get(table, filters = {}) {
     let url = `${SUPA_URL}/rest/v1/${table}?select=*&order=created_at.desc`;
-    Object.entries(filters).forEach(([k, v]) => { url += `&${k}=eq.${v}`; });
+    Object.entries(filters).forEach(([k, v]) = > { url += `&${k}=eq.${v}`; });
     const r = await fetch(url, { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } });
     if (!r.ok) throw new Error(await r.text());
     return r.json();
@@ -1787,7 +1787,18 @@ function Depots({ data, setRaw, user }) {
           <Field label="Note"><Input value={dotForm.note} onChange={e=>setDotForm({...dotForm,note:e.target.value})} placeholder="Description des produits livrés..."/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setDotModal(false)}>Annuler</Btn>
-            <Btn variant="success" onClick={saveDot} disabled={!dotForm.depotId||!dotForm.montant}>{editDot?"Modifier":"Enregistrer"}</Btn>
+            <Btn variant="success" onClick={async()=>{
+              if(editDot){
+                const supaRow={depot_id:dotForm.depotId,type:dotForm.type,date:dotForm.date,montant:Number(dotForm.montant),note:dotForm.note||null};
+                await dbUpdate("dotations_depots",editDot.id,supaRow,setRaw,data,"dotationsDepots",
+                  d=>d.id===editDot.id?{...d,depotId:dotForm.depotId,type:dotForm.type,date:dotForm.date,montant:Number(dotForm.montant),note:dotForm.note||""}:d);
+                setEditDot(null);
+              } else {
+                await addDotation();
+              }
+              setDotModal(false);
+              setDotForm({depotId:"",type:"livraison",date:today(),montant:"",note:""});
+            }} disabled={!dotForm.depotId||!dotForm.montant}>{editDot?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
@@ -1812,7 +1823,18 @@ function Depots({ data, setRaw, user }) {
           <Field label="Note"><Input value={trForm.note} onChange={e=>setTrForm({...trForm,note:e.target.value})} placeholder="Détails du retour..."/></Field>
           <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setTransfertModal(false)}>Annuler</Btn>
-            <Btn variant="danger" onClick={saveTr} disabled={!trForm.depotId||!trForm.montant}>{editTr?"Modifier":"Enregistrer"}</Btn>
+            <Btn variant="danger" onClick={async()=>{
+              if(editTr){
+                const supaRow={depot_id:trForm.depotId,date:trForm.date,montant:Number(trForm.montant),motif:trForm.motif,note:trForm.note||null};
+                await dbUpdate("transferts_depots",editTr.id,supaRow,setRaw,data,"transfertsDepots",
+                  t=>t.id===editTr.id?{...t,depotId:trForm.depotId,date:trForm.date,montant:Number(trForm.montant),motif:trForm.motif,note:trForm.note||""}:t);
+                setEditTr(null);
+              } else {
+                await addTransfert();
+              }
+              setTransfertModal(false);
+              setTrForm({depotId:"",date:today(),montant:"",motif:"peremption",note:""});
+            }} disabled={!trForm.depotId||!trForm.montant}>{editTr?"Modifier":"Enregistrer"}</Btn>
           </div>
         </Modal>
       )}
@@ -2404,16 +2426,38 @@ function Historique({ data }) {
 
   // ── RECETTES ──
   const [sourceFilter, setSourceFilter] = useState("all");
+
+  // Résoudre le nom source d'une recette (robuste aux IDs variables)
+  const resolveSource = (r) => {
+    if (r.source === "pharmacie") return { label:"Centrale", isPharmacy:true, depotId:null };
+    // Chercher le dépôt par ID exact
+    const depById = data.depots.find(d => d.id === r.source);
+    if (depById) return { label:depById.nom, isPharmacy:false, depotId:depById.id };
+    // Fallback: chercher par correspondance partielle d'ID
+    const depPartial = data.depots.find(d => r.source && (r.source.includes(d.id) || d.id.includes(r.source)));
+    if (depPartial) return { label:depPartial.nom, isPharmacy:false, depotId:depPartial.id };
+    return { label:"Dépôt inconnu", isPharmacy:false, depotId:r.source };
+  };
+
   const recettes = data.recettes
-    .filter(r => inPeriod(r.date) &&
-      (sourceFilter === "all" || (sourceFilter === "pharmacie" ? r.source === "pharmacie" : r.source === sourceFilter)) &&
-      (!search ||
-        (r.source==="pharmacie" ? "centrale" : (data.depots.find(d=>d.id===r.source)?.nom||"dépôt")).toLowerCase().includes(search.toLowerCase()) ||
-        (r.caissiere||"").toLowerCase().includes(search.toLowerCase()) ||
-        modeLabel(r.mode).toLowerCase().includes(search.toLowerCase()) ||
-        String(r.montant).includes(search)
-      )
-    )
+    .filter(r => {
+      if (!inPeriod(r.date)) return false;
+      // Filtre source
+      if (sourceFilter !== "all") {
+        if (sourceFilter === "pharmacie" && r.source !== "pharmacie") return false;
+        if (sourceFilter !== "pharmacie" && r.source !== sourceFilter) return false;
+      }
+      // Filtre recherche
+      if (search) {
+        const src = resolveSource(r);
+        const matchSource = src.label.toLowerCase().includes(search.toLowerCase());
+        const matchCais = (r.caissiere||"").toLowerCase().includes(search.toLowerCase());
+        const matchMode = modeLabel(r.mode).toLowerCase().includes(search.toLowerCase());
+        const matchMnt = String(r.montant).includes(search);
+        if (!matchSource && !matchCais && !matchMode && !matchMnt) return false;
+      }
+      return true;
+    })
     .sort((a,b) => {
       let va = a[sortCol], vb = b[sortCol];
       if (sortCol==="montant") { va=Number(va); vb=Number(vb); }
@@ -2539,7 +2583,8 @@ function Historique({ data }) {
                 {recettes.length===0
                   ? <tr><td colSpan={7} style={{padding:32,textAlign:"center",color:"#9ca3af"}}>Aucune recette</td></tr>
                   : recettes.map((r,i)=>{
-                    const src = r.source==="pharmacie" ? "🏥 Centrale" : (data.depots.find(d=>d.id===r.source)?.nom||"Dépôt");
+                    const srcInfo = resolveSource(r);
+                    const src = srcInfo.isPharmacy ? "🏥 Centrale" : "📍 " + srcInfo.label;
                     return (
                       <tr key={i} style={{borderBottom:"1px solid #f0f0f0", background:i%2?"#fafafa":"#fff"}}>
                         <td style={{padding:"9px 14px"}}>{fmtDate(r.date)}</td>
