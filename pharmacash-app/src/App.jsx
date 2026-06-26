@@ -2895,8 +2895,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-import React from 'react';
-
 export default function App() {
   const { raw, setRaw, loading, syncing, refetch } = useSupabaseData();
   const [user, setUser] = useState(null);
