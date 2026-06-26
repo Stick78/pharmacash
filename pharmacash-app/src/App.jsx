@@ -542,14 +542,11 @@ function Dashboard({ data }) {
 
   const recM   = data.recettes.filter(r=>isThisMonth(r.date)&&r.source==="pharmacie").reduce((s,r)=>s+Number(r.montant||0),0);
   const recToday = data.recettes.filter(r=>r.date===today()&&r.source==="pharmacie").reduce((s,r)=>s+Number(r.montant||0),0);
-  const recDepM  = data.recettes.filter(r=>isThisMonth(r.date)&&r.source!=="pharmacie").reduce((s,r)=>s+Number(r.montant||0),0);
+
   const versBankM = data.versementsBanque.filter(v=>isThisMonth(v.date)).reduce((s,v)=>s+Number(v.montant||0),0);
   const depM   = data.depenses.filter(d=>isThisMonth(d.date)).reduce((s,d)=>s+Number(d.montant||0),0);
   const recouvrM = data.recouvrements.filter(r=>isThisMonth(r.date)).reduce((s,r)=>s+Number(r.montant||0),0);
-  // Recettes dépôts aujourd'hui
-  const recDepToday    = data.recettes.filter(r=>r.date===today()&&r.source!=="pharmacie").reduce((s,r)=>s+Number(r.montant||0),0);
-  const recDepTodayEsp = data.recettes.filter(r=>r.date===today()&&r.source!=="pharmacie"&&isEspeces(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
-  const recDepTodayMob = data.recettes.filter(r=>r.date===today()&&r.source!=="pharmacie"&&isMobileMoney(r.mode)).reduce((s,r)=>s+Number(r.montant||0),0);
+
   // Dépenses aujourd'hui
   const depToday = data.depenses.filter(d=>d.date===today()).reduce((s,d)=>s+Number(d.montant||0),0);
   // Versements banque aujourd'hui
@@ -767,7 +764,7 @@ function Dashboard({ data }) {
               </div>
               <div style={{ display:"flex", gap:16, marginTop:10 }}>
                 <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, color:"#0369a1", fontWeight:600 }}><span style={{ width:10, height:10, background:"#0369a1", borderRadius:2, display:"inline-block" }}/> Centrale</span>
-                <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, color:"#7c3aed", fontWeight:600 }}><span style={{ width:10, height:10, background:"#7c3aed", borderRadius:2, display:"inline-block" }}/> Dépôts</span>
+      
                 <span style={{ marginLeft:"auto", fontSize:12, color:"#374151", fontWeight:700 }}>
                   Mois en cours : {fmt(months[11].total)}
                 </span>
@@ -955,7 +952,7 @@ function Recettes({ data, setRaw, user }) {
   const isAdmin = user?.role === 'admin';
   const [modal, setModal] = useState(false);
   const [dotModal, setDotModal] = useState(false);
-  const [form, setForm] = useState({ date:today(), tranche:"jour", caissiere:"", source:"pharmacie", montantEsp:"", modeMobile:"orange_money", montantMobile:"", note:"" });
+  const [form, setForm] = useState({ date:today(), tranche:"jour", caissiere:"", source:"pharmacie", montantEsp:"", modeMobile:"orange_money", montantMobile:"", note:"" }); // source toujours "pharmacie"
   const [dotForm, setDotForm] = useState({ date:today(), dest:"caisse_jour", montant:"", note:"" });
   const [filterFrom, setFilterFrom] = useState(today());
   const [filterTo, setFilterTo] = useState(today());
@@ -1028,22 +1025,13 @@ function Recettes({ data, setRaw, user }) {
     setForm({ date:today(), tranche:"jour", caissiere:"", source:"pharmacie", montantEsp:"", modeMobile:"orange_money", montantMobile:"", note:"" });
   };
 
-  // Filtrer les caissières selon la source sélectionnée
-  const getCaissiers = (source) => {
-    if (source === "pharmacie") {
-      // Caissières de la centrale uniquement
-      return (data.caissieresApp||[]).filter(c=>c.poste==="centrale").map(c=>c.nom);
-    } else {
-      // Responsables du dépôt sélectionné
-      return (data.responsables||[]).filter(r=>r.depotId===source).map(r=>r.nom);
-    }
-  };
-  const caissiers = getCaissiers(form.source);
+  // Caissières de la pharmacie centrale uniquement
+  const caissiers = (data.caissieresApp||[]).filter(c=>c.poste==="centrale").map(c=>c.nom);
   const filtered = [...data.recettes]
     .filter(r=>(!filterFrom||r.date>=filterFrom)&&(!filterTo||r.date<=filterTo))
     .sort((a,b)=>b.date.localeCompare(a.date));
-  const totJour = filtered.filter(r=>r.source==="pharmacie"&&r.tranche==="jour").reduce((s,r)=>s+Number(r.montant||0),0);
-  const totNuit = filtered.filter(r=>r.source==="pharmacie"&&r.tranche==="nuit").reduce((s,r)=>s+Number(r.montant||0),0);
+  const totJour = filtered.filter(r=>r.tranche==="jour").reduce((s,r)=>s+Number(r.montant||0),0);
+  const totNuit = filtered.filter(r=>r.tranche==="nuit").reduce((s,r)=>s+Number(r.montant||0),0);
 
   const destLabel = { caisse_jour:"Caisse Jour", caisse_nuit:"Caisse Nuit", ...Object.fromEntries((data.depots||[]).map(d=>[d.id,d.nom])) };
 
@@ -1108,15 +1096,12 @@ function Recettes({ data, setRaw, user }) {
       </div>
 
       <Table
-        cols={["Date","Tranche","Source","Caissière","Mode","Montant","Note",""]}
+        cols={["Date","Tranche","Caissière","Mode","Montant","Note",""]}
         rows={filtered.map(r=>{
-          const src = r.source==="pharmacie" ? "🏥 Centrale" : ((data.depots||[]).find(d=>d.id===r.source)?.nom||"Dépôt");
           return [
             fmtDate(r.date),
-            r.source==="pharmacie"
-              ? (r.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>)
-              : <Badge color="#7c3aed">📍 Dépôt</Badge>,
-            src, r.caissiere||"—", modeLabel(r.mode), <b>{fmt(r.montant)}</b>, r.note||"—",
+            r.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>,
+            r.caissiere||"—", modeLabel(r.mode), <b>{fmt(r.montant)}</b>, r.note||"—",
             <EditDeleteBtns isAdmin={isAdmin} onEdit={()=>openEdit(r)} onDelete={()=>deleteRec(r.id)}/>,
           ];
         })}
@@ -1127,21 +1112,14 @@ function Recettes({ data, setRaw, user }) {
         <Modal title={editRow?"Modifier la recette":"Enregistrer une recette"} onClose={()=>{setModal(false);setEditRow(null);}}>
           <Row>
             <Field label="Date" required half><Input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
-            {form.source==="pharmacie" && (
-              <Field label="Tranche horaire" required half>
+            <Field label="Tranche horaire" required half>
                 <Select value={form.tranche} onChange={e=>setForm({...form,tranche:e.target.value})}>
                   <option value="jour">☀️ Jour (7h30 – 17h30)</option>
                   <option value="nuit">🌙 Nuit (17h30 – 7h30)</option>
                 </Select>
               </Field>
-            )}
           </Row>
-          <Field label="Source" required>
-            <Select value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>
-              <option value="pharmacie">🏥 Pharmacie centrale</option>
-              {(data.depots||[]).map(d=><option key={d.id} value={d.id}>📍 {d.nom}</option>)}
-            </Select>
-          </Field>
+          {/* Source fixe : Pharmacie centrale uniquement */}
           <Field label="Caissière / Responsable">
             <Input list="caissieres-list" value={form.caissiere} onChange={e=>setForm({...form,caissiere:e.target.value})} placeholder="Nom de la caissière ou responsable"/>
             <datalist id="caissieres-list">
@@ -2425,39 +2403,15 @@ function Historique({ data }) {
   });
 
   // ── RECETTES ──
-  const [sourceFilter, setSourceFilter] = useState("all");
-
-  // Résoudre le nom source d'une recette (robuste aux IDs variables)
-  const resolveSource = (r) => {
-    if (r.source === "pharmacie") return { label:"Centrale", isPharmacy:true, depotId:null };
-    // Chercher le dépôt par ID exact
-    const depById = data.depots.find(d => d.id === r.source);
-    if (depById) return { label:depById.nom, isPharmacy:false, depotId:depById.id };
-    // Fallback: chercher par correspondance partielle d'ID
-    const depPartial = data.depots.find(d => r.source && (r.source.includes(d.id) || d.id.includes(r.source)));
-    if (depPartial) return { label:depPartial.nom, isPharmacy:false, depotId:depPartial.id };
-    return { label:"Dépôt inconnu", isPharmacy:false, depotId:r.source };
-  };
-
+  // Recettes = uniquement pharmacie centrale
   const recettes = data.recettes
-    .filter(r => {
-      if (!inPeriod(r.date)) return false;
-      // Filtre source
-      if (sourceFilter !== "all") {
-        if (sourceFilter === "pharmacie" && r.source !== "pharmacie") return false;
-        if (sourceFilter !== "pharmacie" && r.source !== sourceFilter) return false;
-      }
-      // Filtre recherche
-      if (search) {
-        const src = resolveSource(r);
-        const matchSource = src.label.toLowerCase().includes(search.toLowerCase());
-        const matchCais = (r.caissiere||"").toLowerCase().includes(search.toLowerCase());
-        const matchMode = modeLabel(r.mode).toLowerCase().includes(search.toLowerCase());
-        const matchMnt = String(r.montant).includes(search);
-        if (!matchSource && !matchCais && !matchMode && !matchMnt) return false;
-      }
-      return true;
-    })
+    .filter(r => r.source === "pharmacie" && inPeriod(r.date) &&
+      (!search ||
+        (r.caissiere||"").toLowerCase().includes(search.toLowerCase()) ||
+        modeLabel(r.mode).toLowerCase().includes(search.toLowerCase()) ||
+        String(r.montant).includes(search)
+      )
+    )
     .sort((a,b) => {
       let va = a[sortCol], vb = b[sortCol];
       if (sortCol==="montant") { va=Number(va); vb=Number(vb); }
@@ -2546,14 +2500,7 @@ function Historique({ data }) {
       {/* ── RECETTES ── */}
       {onglet==="recettes" && (
         <div>
-          {/* Filtre par source */}
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 }}>
-            <Select value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)} style={{ width:"auto", fontSize:13 }}>
-              <option value="all">🏪 Tous les points de vente</option>
-              <option value="pharmacie">🏥 Pharmacie centrale</option>
-              {(data.depots||[]).map(d=><option key={d.id} value={d.id}>📍 {d.nom}</option>)}
-            </Select>
-          </div>
+
 
           <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap" }}>
             <div style={{ background:"#f0f9ff", borderRadius:8, padding:"8px 14px", fontSize:13 }}>
@@ -2571,7 +2518,6 @@ function Historique({ data }) {
               <thead>
                 <tr>
                   <th style={thStyle("date")} onClick={()=>toggleSort("date")}>Date{sortIcon("date")}</th>
-                  <th style={thStyle("source")} onClick={()=>toggleSort("source")}>Source{sortIcon("source")}</th>
                   <th style={thStyle("tranche")}>Tranche</th>
                   <th style={thStyle("caissiere")} onClick={()=>toggleSort("caissiere")}>Caissière{sortIcon("caissiere")}</th>
                   <th style={thStyle("mode")} onClick={()=>toggleSort("mode")}>Mode{sortIcon("mode")}</th>
@@ -2583,16 +2529,13 @@ function Historique({ data }) {
                 {recettes.length===0
                   ? <tr><td colSpan={7} style={{padding:32,textAlign:"center",color:"#9ca3af"}}>Aucune recette</td></tr>
                   : recettes.map((r,i)=>{
-                    const srcInfo = resolveSource(r);
-                    const src = srcInfo.isPharmacy ? "🏥 Centrale" : "📍 " + srcInfo.label;
+                    const src = "🏥 Centrale";
                     return (
                       <tr key={i} style={{borderBottom:"1px solid #f0f0f0", background:i%2?"#fafafa":"#fff"}}>
                         <td style={{padding:"9px 14px"}}>{fmtDate(r.date)}</td>
-                        <td style={{padding:"9px 14px"}}>{src}</td>
+
                         <td style={{padding:"9px 14px"}}>
-                          {r.source==="pharmacie"
-                            ? (r.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>)
-                            : <Badge color="#7c3aed">📍 Dépôt</Badge>}
+                          {r.tranche==="jour"?<Badge color="#f59e0b">☀️ Jour</Badge>:<Badge color="#1e40af">🌙 Nuit</Badge>}
                         </td>
                         <td style={{padding:"9px 14px"}}>{r.caissiere||"—"}</td>
                         <td style={{padding:"9px 14px"}}>{modeLabel(r.mode)}</td>
@@ -2839,16 +2782,16 @@ function useSupabaseData() {
       const [users, depots, recettes, clients, recouvrements, encaissementsDivers,
              versementsBanque, verseDepots, depenses, dotationHistory, responsables, caissieresRaw, connexions, clotures,
              dotationsDepots, transfertsDepots, inventairesDepots] = await Promise.all([
-        supa.get("utilisateurs"),
-        supa.get("depots"),
-        supa.get("recettes"),
-        supa.get("clients"),
-        supa.get("recouvrements"),
-        supa.get("encaissements_divers"),
-        supa.get("versements_banque"),
-        supa.get("verse_depots"),
-        supa.get("depenses"),
-        supa.get("dotation_history"),
+        supa.get("utilisateurs").catch(()=>[]),
+        supa.get("depots").catch(()=>[]),
+        supa.get("recettes").catch(()=>[]),
+        supa.get("clients").catch(()=>[]),
+        supa.get("recouvrements").catch(()=>[]),
+        supa.get("encaissements_divers").catch(()=>[]),
+        supa.get("versements_banque").catch(()=>[]),
+        supa.get("verse_depots").catch(()=>[]),
+        supa.get("depenses").catch(()=>[]),
+        supa.get("dotation_history").catch(()=>[]),
         supa.get("responsables").catch(()=>[]),
         supa.get("caissieres").catch(()=>[]),
         supa.get("connexions").catch(()=>[]),
