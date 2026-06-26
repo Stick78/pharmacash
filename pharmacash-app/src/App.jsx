@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
 const SUPA_URL = "https://ahpbjjtwzrzxcizdzfyq.supabase.co";
@@ -2872,6 +2872,31 @@ function useSupabaseData() {
   return { raw, setRaw, loading, syncing, refetch: fetchAll };
 }
 
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding:40, fontFamily:"monospace", background:"#fef2f2", minHeight:"100vh" }}>
+          <h2 style={{ color:"#dc2626" }}>⚠️ Erreur PharmaCash</h2>
+          <pre style={{ background:"#fff", padding:20, borderRadius:8, overflow:"auto", fontSize:13 }}>
+            {this.state.error.toString()}
+            {this.state.error.stack}
+          </pre>
+          <button onClick={()=>window.location.reload()} style={{ marginTop:16, padding:"10px 20px", background:"#047857", color:"#fff", border:"none", borderRadius:8, cursor:"pointer", fontSize:15 }}>
+            🔄 Recharger
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+import React from 'react';
+
 export default function App() {
   const { raw, setRaw, loading, syncing, refetch } = useSupabaseData();
   const [user, setUser] = useState(null);
@@ -2977,6 +3002,7 @@ export default function App() {
   );
 
   return (
+    <ErrorBoundary>
     <div style={{ display:"flex", height:"100vh", fontFamily:"'Inter','Segoe UI',sans-serif", background:"#f0fdf4" }}>
       <style>{`
         @media(max-width:720px){ .ds{display:none!important} }
@@ -3056,5 +3082,7 @@ export default function App() {
         </main>
       </div>
     </div>
+  
+    </ErrorBoundary>
   );
 }
