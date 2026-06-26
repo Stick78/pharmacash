@@ -667,7 +667,7 @@ function Dashboard({ data }) {
       <p style={{ margin:"0 0 8px", fontSize:12, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:0.8 }}>Aujourd'hui</p>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
         <KpiCard label="Recettes centrale" value={fmt(recToday)} color="#047857" icon="recettes" sub="💵 Esp. + 📱 Mobile"/>
-        <KpiCard label="Recettes dépôts" value={fmt(recDepToday)} color="#7c3aed" icon="depots" sub={`💵 ${fmt(recDepTodayEsp)} · 📱 ${fmt(recDepTodayMob)}`}/>
+
         <KpiCard label="Versements banque" value={fmt(versBanqueToday)} color="#0891b2" icon="versements" sub="Espèces + Mobile"/>
         <KpiCard label="Recouvrement" value={fmt(recouvrTodayTotal)} color="#b45309" icon="recouvrement" sub={`Clients: ${fmt(recouvrToday)} · Divers: ${fmt(diversToday)}`}/>
         <KpiCard label="Dépenses" value={fmt(depToday)} color="#dc2626" icon="depenses" sub="Toutes catégories"/>
@@ -676,7 +676,7 @@ function Dashboard({ data }) {
       {/* KPI DU MOIS */}
       <p style={{ margin:"0 0 8px", fontSize:12, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:0.8 }}>{new Date().toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}</p>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:24 }}>
-        <KpiCard label="Recettes centrale" value={fmt(recM)} color="#0369a1" icon="recettes" sub={`Dépôts : ${fmt(recDepM)}`}/>
+        <KpiCard label="Recettes centrale" value={fmt(recM)} color="#0369a1" icon="recettes" />
         <KpiCard label="Versements banque" value={fmt(versBankM)} color="#0891b2" icon="versements"/>
         <KpiCard label="Recouvrement" value={fmt(recouvrM)} color="#b45309" icon="recouvrement" sub="Encaissements clients"/>
         <KpiCard label="Dépenses" value={fmt(depM)} color="#ea580c" icon="depenses"/>
